@@ -36,7 +36,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 
 	@Override
 	public String getName() {
-		return "Old MS-DOS style 32bit Linear Executable (LE/LX)";
+		return "Linear Executable (LE/LX)";
 	}
 
 	@Override
@@ -50,7 +50,6 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "borlandcpp"), true));
 			//loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "gcc"), true));
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (InvalidHeaderException e) {
 			// Everything is ok, but the provided data is not a valid LX/LE header
@@ -66,8 +65,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		if (monitor.isCancelled()) {
 			return;
 		}
-		monitor.setMessage("Processing LE executable...");
-		
+		monitor.setMessage(String.format("Processing %s..", getName()));
 		ContinuesFactory factory = MessageLogContinuesFactory.create(log);
 
 		// We don't use the file bytes to create block because the bytes are manipulated before
@@ -80,12 +78,12 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		try {
 			le = new LxExecutable(factory, provider);
 			LxHeader ib = le.getLeHeader();
+			log.appendMsg(String.format("number of objects: %x", ib.objectCount));
+			log.appendMsg(String.format("bytes on last page: %x", ib.lastPageSize));
+			log.appendMsg(String.format("size: --, initial eip: %x", ib.eip));
+			log.appendMsg(String.format("object table offset: %x", ib.objectTableOffset));
 			/*
-			log.appendMsg(String.format("number of objects: %x", ib.getObjectCount()));
-			log.appendMsg(String.format("bytes on last page: %x", ib.getBytesOnLastPage()));
-			log.appendMsg(String.format("size: --, initial eip: %x", ib.getInitialEIP()));
-			log.appendMsg(String.format("object table offset: %x", ib.getObjectTableOffset()));
-			log.appendMsg(String.format("object page map offset: %x", ib.getObjectPageMapOffset()));
+			log.appendMsg(String.format("object page map offset: %x", ib.));
 			log.appendMsg(String.format("fixup page table offset: %x", ib.getFixupPageTableOffset()));
 			log.appendMsg(String.format("fixup record table offset: %x", ib.getFixupRecordTableOffset()));
 			log.appendMsg(String.format("data page offset size: %x", ib.getDataPagesOffset()));
@@ -108,6 +106,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			// Map each object
 			i = 0;
 			for (ObjectMapEntry object : le.getObjects()) {
+				var isLastObject = i == le.getObjects().size() - 1;
 				
 				// Temporary memory to assemble all pages to one block
 				byte block[] = new byte[object.size+4096];
@@ -139,7 +138,14 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					// Read page from file
 					FactoryBundledWithBinaryReader r = le.getReader();
 					r.setPointerIndex(pageOffset);
-					byte[] pageData = r.readNextByteArray((int) pageSize);
+					byte[] pageData;
+					var isLastPage = j == object.pageCount - 1;
+					if (isLastObject && isLastPage) {
+						pageData = r.readNextByteArray(ib.lastPageSize);
+					} else {
+						pageData = r.readNextByteArray((int) pageSize);	
+					}
+					
 					
 					// Apply fixups to page
 					int fixupDataSize = fixupEnd - fixupBegin;
@@ -241,14 +247,14 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 									" fix%x: %s, %x:%x(%d)%x+%x=%x => %s %s",
 									fixupCount, 
 									"", objectNumber, targetOffset, targetOffset,
-									getBaseAddress(le.getObjects()[objectNumber-1]), targetOffset, getBaseAddress(le.getObjects()[objectNumber-1]) + targetOffset,  
+									getBaseAddress(le.getObjects().get(objectNumber-1)), targetOffset, getBaseAddress(le.getObjects().get(objectNumber-1)) + targetOffset,  
 									"", 
 									isSourceList ? "source list " + sourceCount : String.format("off: %x", sourceOffset)
 								));
 							}
 							
 							if ((sourceType & 0xf) == 7 && sourceOffset > 0 && sourceOffset < pageData.length - 4) {
-								int base = getBaseAddress(le.getObjects()[objectNumber-1]);
+								int base = getBaseAddress(le.getObjects().get(objectNumber-1));
 								int value = base + targetOffset;
 								pageData[sourceOffset] = (byte)(value & 0xff);
 								pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);
@@ -286,10 +292,13 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			
 			FlatProgramAPI api = new FlatProgramAPI(program, monitor);
 			int eip = le.getLeHeader().eip;
-			eip += 0x170010;
+			//eip += 0x170010;
+			var o = le.getObjects().get(le.getLeHeader().eipObject-1);
+			eip += o.base;			
+			log.appendMsg(String.format("EIP = 0x%x (0x%x + 0x%x)", eip, o.base, le.getLeHeader().eip));
 			api.addEntryPoint(api.toAddr(eip));
-			//api.disassemble(api.toAddr(eip));
-			//api.createFunction(api.toAddr(eip), "_entry");
+			api.disassemble(api.toAddr(eip));
+			api.createFunction(api.toAddr(eip), "_entry");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -299,12 +308,14 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 	
 	private int getBaseAddress(ObjectMapEntry object) {
 		switch (object.number) {
+		/*
 		case 1:
 			return 0x170010;
 		case 2:
 			return 0x2c59c0;
 		case 3:
 			return 0x2c59e0;
+			*/
 		default:
 			return object.base;
 		}
@@ -314,13 +325,11 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean isLoadIntoProgram) {
-		List<Option> list =
-			super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
+		//List<Option> list = super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
+		var list = new ArrayList<Option>();
 
-		list.add(new Option("guess_dos32a", "1"));
-		list.add(new Option("dos32a_base_adress", "0x170000"));
-		list.add(new Option("dos32a_selectors", "828,838,838"));
-		list.add(new Option("guess_dos4gw", "1"));
+		list.add(new Option("object_base_adresses", ""));
+		list.add(new Option("selectors", ""));
 
 		return list;
 	}

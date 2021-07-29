@@ -3,7 +3,7 @@ package yetmorecode.ghidra.format.lx;
 import java.io.IOException;
 
 import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
-import yetmorecode.format.lx.ObjectTableEntry;
+import yetmorecode.file.format.lx.ObjectTableEntry;
 
 public class ObjectMapEntry extends ObjectTableEntry {
 

@@ -7,14 +7,14 @@ import ghidra.util.Conv;
 import ghidra.util.Msg;
 import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
-public class LxHeader extends yetmorecode.format.lx.LxHeader {
+public class LxHeader extends yetmorecode.file.format.lx.LxHeader {
 	
 	public LxHeader(FactoryBundledWithBinaryReader reader, short index) throws IOException, InvalidHeaderException {
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(Conv.shortToInt(index));
 
 		signature = reader.readNextShort();
-		if (signature != yetmorecode.format.lx.LxHeader.SIGNATURE_LE) {
+		if (signature != yetmorecode.file.format.lx.LxHeader.SIGNATURE_LE) {
 			Msg.info("LE", String.format("wrong magic %x", signature));
 			throw new InvalidHeaderException();
 		}
