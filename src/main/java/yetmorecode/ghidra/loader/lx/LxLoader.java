@@ -84,11 +84,10 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			
 			for (ObjectMapEntry object : executable.getObjects()) {
 				log.appendMsg(String.format(
-					"Object #%x base: %x - %x (%x), pages: %x (%x)",
+					"Object #%x base: %08x - %08x (%06x), pages: %03x - %03x (%x)",
 					object.number,
 					object.base, object.base + object.size, object.size,
-					object.pageCount, 
-					object.pageTableIndex
+					object.pageTableIndex, object.pageTableIndex + object.pageCount - 1, object.pageCount 
 				));
 			}
 			
@@ -108,7 +107,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			int eip = executable.getLeHeader().eip;
 			var o = executable.getObjects().get(executable.getLeHeader().eipObject-1);
 			eip += getBaseAddress(o);			
-			log.appendMsg(String.format("Entrypoint set at 0x%x (0x%x + 0x%x)", eip, getBaseAddress(o), executable.getLeHeader().eip));
+			log.appendMsg(String.format("Entrypoint set at %08x (%08x + %08x)", eip, getBaseAddress(o), executable.getLeHeader().eip));
 			api.addEntryPoint(api.toAddr(eip));
 			api.disassemble(api.toAddr(eip));
 			api.createFunction(api.toAddr(eip), "_entry");
@@ -130,7 +129,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		long pageSize = ib.pageSize; 
 		
 		int unhandled = 0;
-		log.appendMsg(String.format("Mapping object #%x to memory location 0x%x - 0x%x", 
+		log.appendMsg(String.format("Mapping object #%x to memory location %08x - %08x", 
 				object.number, 
 				getBaseAddress(object),
 				getBaseAddress(object) + object.size
@@ -265,7 +264,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						// 16 bit selector fixup
 					} else {
 						log.appendMsg(String.format(
-							"WARNING: unhandled fixup #%x at %x (type %x, page %x): %s -> object#%x:%x",
+							"WARNING: unhandled fixup #%x at %08x (type %x, page %03x): %s -> object#%x:%x",
 							unhandled, 
 							getBaseAddress(object) + index * pageSize + sourceOffset,
 							sourceType, index,
