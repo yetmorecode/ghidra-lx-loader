@@ -107,8 +107,8 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			FlatProgramAPI api = new FlatProgramAPI(program, monitor);
 			int eip = executable.getLeHeader().eip;
 			var o = executable.getObjects().get(executable.getLeHeader().eipObject-1);
-			eip += o.base;			
-			log.appendMsg(String.format("EIP = 0x%x (0x%x + 0x%x)", eip, o.base, executable.getLeHeader().eip));
+			eip += getBaseAddress(o);			
+			log.appendMsg(String.format("EIP = 0x%x (0x%x + 0x%x)", eip, getBaseAddress(o), executable.getLeHeader().eip));
 			api.addEntryPoint(api.toAddr(eip));
 			api.disassemble(api.toAddr(eip));
 			api.createFunction(api.toAddr(eip), "_entry");
