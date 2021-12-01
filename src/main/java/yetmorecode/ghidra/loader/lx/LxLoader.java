@@ -34,7 +34,7 @@ import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
  */
 public class LxLoader extends AbstractLibrarySupportLoader {
 
-	private final static String OPTION_BASE_ADDRESSES = "object-base-addresses";
+	private final static String OPTION_BASE_ADDRESSES = "Override object base addresses (comma-seperated)";
 	
 	private MessageLog log;
 	private int[] baseAddresses;
@@ -298,11 +298,8 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean isLoadIntoProgram) {
-		//List<Option> list = super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
 		var list = new ArrayList<Option>();
-
 		list.add(new Option(OPTION_BASE_ADDRESSES, ""));
-
 		return list;
 	}
 
@@ -316,7 +313,12 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				for (int i = 0; i < addresses.length; i++) {
 					String addr = addresses[i];
 					addr = addr.replaceAll("0x", "");
-					baseAddresses[i] = Integer.parseInt(addr, 16);
+					if (addr.length() > 0) {
+						baseAddresses[i] = Integer.parseInt(addr, 16);	
+					} else {
+						baseAddresses[i] = 0;
+					}
+					
 				}
 			}
 		}
