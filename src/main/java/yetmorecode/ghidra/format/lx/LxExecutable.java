@@ -15,7 +15,7 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
     private FactoryBundledWithBinaryReader reader;
     DOSHeader mzHeader;
     
-    private ArrayList<ObjectMapEntry> objects = new ArrayList<>();
+    public ArrayList<ObjectMapEntry> objects = new ArrayList<>();
     
 	public LxExecutable(GenericFactory factory, ByteProvider bp) throws IOException, InvalidHeaderException {
     	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
