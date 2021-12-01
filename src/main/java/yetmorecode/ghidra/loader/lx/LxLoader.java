@@ -246,6 +246,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 									pageData[sourceOffset+2] = (byte)((value & 0xff0000)>>16);
 								}
 								if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
+
 									pageData[sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 								}
 							} else if ((sourceType & 0xf) == 2) {
