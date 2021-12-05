@@ -9,8 +9,15 @@ Download a release matching your ghidra version from the [releases](https://gith
 ## Features
 
 * Adds support for LX and LE-style executable formats to Ghidra
-* Full support for 16/32-bit offset fixups (type 5 & 7), 32-bit self-ref fixups (type 8), 16:16 pointer fixups (type 2) and 16-bit selector fixups (type 2)
-* Unimplemented fixups (not seen anywhere yet, type 1 & 4 are undefined by spec): byte fixups (type 0), 16:32 pointer fixups (type 6)
+* Full fixup support for
+  * 16-bit selector fixups (type 2)
+  * 16:16 pointer fixups (type 3)
+  * 16/32-bit offset fixups (type 5 & 7)
+  * 32-bit self-ref fixups (type 8)
+* Unimplemented fixups (not seen anywhere yet):
+  * byte fixups (type 0)
+  * 16:32 pointer fixups (type 6)
+  * Undefined by spec: type 1 & 4 
 * Unhandled fixups will be logged
 * Loader option to manually override the object base addresses and segment selectors
 
