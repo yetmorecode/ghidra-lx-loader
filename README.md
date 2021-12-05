@@ -9,7 +9,7 @@ Download a release matching your ghidra version from the [releases](https://gith
 ## Features
 
 * Adds support for LX and LE-style executable formats to Ghidra
-* Full fixup support for
+* Full fixup support for:
   * 16-bit selector fixups (type 2)
   * 16:16 pointer fixups (type 3)
   * 16/32-bit offset fixups (type 5 & 7)
