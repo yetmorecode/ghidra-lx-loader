@@ -40,8 +40,8 @@ The loader will adjust the locations (and fixups!) accordingly:
 
 ## Tested with
 
-* F1 Manager Professional: https://www.mobygames.com/game/dos/f1-manager-professional
-* The Elder Scrolls Redguard: https://en.wikipedia.org/wiki/The_Elder_Scrolls_Adventures:_Redguard
+* F1 Manager Professional (F1.exe): https://www.mobygames.com/game/dos/f1-manager-professional
+* The Elder Scrolls Redguard (RGFX.exe): https://en.wikipedia.org/wiki/The_Elder_Scrolls_Adventures:_Redguard
 
 ## Feedback
 
