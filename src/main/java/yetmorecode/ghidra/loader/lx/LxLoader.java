@@ -437,7 +437,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			}
 		}
 		log.appendMsg(String.format(
-			"Object #%x: Found %d fixups total, %d handled, %d unhandled, by type: %s",
+			"[Object#%x] Found %d fixups total, %d handled, %d unhandled, by type: %s",
 			object.number,
 			fixupsHandled + fixupsUnhandled, 
 			fixupsHandled, 

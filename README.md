@@ -9,13 +9,14 @@ Download a release matching your ghidra version from the [releases](https://gith
 ## Features
 
 * Adds support for LX and LE-style executable formats to Ghidra
-* Full support for 32 bit offset fixups (also across page boundaries)
-* Unhandled fixups will be logged (if any)
-* Loader option to manually override the object base addresses
+* Full support for 16/32-bit offset fixups (type 5 & 7), 32-bit self-ref fixups (type 8), 16:16 pointer fixups (type 2) and 16-bit selector fixups (type 2)
+* Unimplemented fixups (not seen anywhere yet, type 1 & 4 are undefined by spec): byte fixups (type 0), 16:32 pointer fixups (type 6)
+* Unhandled fixups will be logged
+* Loader option to manually override the object base addresses and segment selectors
 
-## Manually overriding base addresses
+## Manually overriding base addresses and segment selectors
 
-The loader can be instructed to manually override the base addresses of the executable's objects. I use this to feed Ghidra the same memory layout I find in the dosbox debugger. In return I can use the same addresses found in Ghidra to set breakpoints in the debugger etc.
+The loader can be instructed to manually override the base addresses and selectors of the executable's objects. I use this to feed Ghidra the same memory layout and segment selectors as I find in the dosbox debugger. In return I can use the same addresses found in Ghidra to set breakpoints in the debugger etc.
 
 To override the base addresses, just enter a comma-seperated list of hex values into the field:
 
@@ -29,3 +30,12 @@ The loader will adjust the locations (and fixups!) accordingly:
 
 * https://ghidra-sre.org/
 * https://moddingwiki.shikadi.net/wiki/Linear_Executable_(LX/LE)_Format
+
+## Tested with
+
+* F1 Manager Professional: https://www.mobygames.com/game/dos/f1-manager-professional
+* The Elder Scrolls Redguard: https://en.wikipedia.org/wiki/The_Elder_Scrolls_Adventures:_Redguard
+
+## Feedback
+
+If you got any feedback, please don't hesitate to open a ticket. Even if you are just using the loader without any issues I'd be happy to hear about :)
