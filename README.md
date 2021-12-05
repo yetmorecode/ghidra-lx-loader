@@ -38,6 +38,7 @@ The loader will adjust the locations (and fixups!) accordingly:
 * https://ghidra-sre.org/
 * https://moddingwiki.shikadi.net/wiki/Linear_Executable_(LX/LE)_Format
 * https://github.com/yetmorecode/dos32a/blob/master/src/dos32a/loader.asm
+* https://github.com/open-watcom/open-watcom-v2/blob/master/bld/watcom/h/exeflat.h
 
 ## Tested with
 
