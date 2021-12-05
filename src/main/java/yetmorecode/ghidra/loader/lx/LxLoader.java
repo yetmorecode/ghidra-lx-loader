@@ -23,9 +23,9 @@ import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.Program;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
+import yetmorecode.file.format.lx.LxFixupRecord;
 import yetmorecode.ghidra.format.lx.LxExecutable;
-import yetmorecode.ghidra.format.lx.LxHeader;
-import yetmorecode.ghidra.format.lx.ObjectMapEntry;
+import yetmorecode.ghidra.format.lx.ObjectTableEntry;
 import yetmorecode.ghidra.format.lx.PageMapEntry;
 import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
@@ -34,14 +34,39 @@ import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
  */
 public class LxLoader extends AbstractLibrarySupportLoader {
 
-	private final static String OPTION_BASE_ADDRESSES = "Override object base addresses (comma-seperated)";
+	private final static String GROUP_OVERRIDES = "Runtime overrides (comma-separated)";
+	private final static String GROUP_LOGGING = "Logging";
+	private final static String GROUP_INIT = "Initialization";
+
+	private final static String OPTION_LOG_32BIT_OFFSET = "Log 32-bit offset fixups";
+	private final static String OPTION_LOG_16BIT_OFFSET = "Log 16-bit offset fixups";
+	private final static String OPTION_LOG_32BIT_SELFREL = "Log 32-bit self-rel fixups";
+	private final static String OPTION_LOG_1616_POINTER = "Log 16:16 pointer fixups";
+	private final static String OPTION_WARN_UNHANDLED_FIXUP = "Warn on unhandled fixups";
+	private final static String OPTION_BASE_ADDRESSES = "Object base addresses";
+	private final static String OPTION_OBJECT_SELECTORS = "Object segment selectors";
+	private final static String OPTION_OMIT_ENTRY = "Omit entry point";
+	private final static String OPTION_DISASSEMBLE = "Disassemble from entry";
+	
 	
 	private MessageLog log;
+	
+	private boolean logOffsets32bit = false;
+	private boolean logOffsets16bit = false;
+	private boolean logSelfRel = false;
+	private boolean log1616pointer = false;
+	private boolean warnUnhandled = true;
+	private boolean omitEntry = false;
+	private boolean disassembleEntry = true;
+	
 	private int[] baseAddresses;
+	private int[] selectors;
+	
+	private String name = "Linear Executable (LX/LE/LC)";
 	
 	@Override
 	public String getName() {
-		return "Linear Executable (LE/LX)";
+		return name;
 	}
 
 	@Override
@@ -57,7 +82,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (InvalidHeaderException e) {
-			// Everything is ok, but the provided data is not a valid LX/LE header
+			// Everything is ok, but the provided data is not a valid LX/LE/LC
 		}
 		return loadSpecs;
 	}
@@ -79,20 +104,22 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		LxExecutable executable;
 		try {
 			executable = new LxExecutable(factory, provider);
-			LxHeader header = executable.getLeHeader();
+			var header = executable.getLeHeader();
 			log.appendMsg(String.format("Number of objects: %x", header.objectCount));
 			
-			for (ObjectMapEntry object : executable.getObjects()) {
+			// Log verbose object table information
+			for (var object : executable.getObjects()) {
 				log.appendMsg(String.format(
-					"Object #%x base: %08x - %08x (%06x), pages: %03x - %03x (%x)",
+					"Object #%x base: %08x - %08x (%08x), pages: %03x - %03x (%03x total), flags: %s",
 					object.number,
 					object.base, object.base + object.size, object.size,
-					object.pageTableIndex, object.pageTableIndex + object.pageCount - 1, object.pageCount 
+					object.pageTableIndex, object.pageTableIndex + object.pageCount - 1, object.pageCount,
+					object.getExtraFlagsLabel()
 				));
 			}
 			
 			// Map each object
-			for (ObjectMapEntry object : executable.getObjects()) {
+			for (var object : executable.getObjects()) {
 				byte[] block = createObjectBlock(executable, object, object.number == executable.getObjects().size());
 				program.getMemory().createInitializedBlock(
 					"object" + object.number, 
@@ -103,38 +130,49 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				);
 			}
 			
-			FlatProgramAPI api = new FlatProgramAPI(program, monitor);
-			int eip = executable.getLeHeader().eip;
-			var o = executable.getObjects().get(executable.getLeHeader().eipObject-1);
-			eip += getBaseAddress(o);			
-			log.appendMsg(String.format("Entrypoint set at %08x (%08x + %08x)", eip, getBaseAddress(o), executable.getLeHeader().eip));
-			api.addEntryPoint(api.toAddr(eip));
-			api.disassemble(api.toAddr(eip));
-			api.createFunction(api.toAddr(eip), "_entry");
+			// Initialization (entry point, disassemble, ...)
+			if (!omitEntry) {
+				var api = new FlatProgramAPI(program, monitor);
+				int eip = executable.getLeHeader().eip;
+				var o = executable.getObjects().get(executable.getLeHeader().eipObject-1);
+				eip += getBaseAddress(o);			
+				log.appendMsg(String.format("Entrypoint set at %08x (%08x + %08x)", eip, getBaseAddress(o), executable.getLeHeader().eip));
+				api.addEntryPoint(api.toAddr(eip));
+				if (disassembleEntry) {
+					api.disassemble(api.toAddr(eip));	
+				}
+				api.createFunction(api.toAddr(eip), "_entry");	
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
-		}	
+		}
 	}
 	
-	private byte[] createObjectBlock(LxExecutable le, ObjectMapEntry object, boolean isLastObject) throws IOException {
+	private byte[] createObjectBlock(LxExecutable le, ObjectTableEntry object, boolean isLastObject) throws IOException {
 		// Temporary memory to assemble all pages to one block
 		byte block[] = new byte[object.size+4096];
 		long blockIndex = 0;
 		
-		// Loop through all pages for this object and add them together
-		LxHeader ib = le.getLeHeader();
-		long pageMapOffset = le.getDosHeader().e_lfanew() + ib.pageTableOffset;
-		long fixupPageMapOffset = le.getDosHeader().e_lfanew() + ib.fixupPageTableOffset;
-		long fixupRecordOffset = le.getDosHeader().e_lfanew() + ib.fixupRecordTableOffset;
-		long pageSize = ib.pageSize; 
+		var header = le.getLeHeader();
+		long pageMapOffset = le.getDosHeader().e_lfanew() + header.pageTableOffset;
+		long fixupPageMapOffset = le.getDosHeader().e_lfanew() + header.fixupPageTableOffset;
+		long fixupRecordOffset = le.getDosHeader().e_lfanew() + header.fixupRecordTableOffset;
+		long pageSize = header.pageSize; 
 		
-		int unhandled = 0;
-		log.appendMsg(String.format("Mapping object #%x to memory location %08x - %08x", 
+		// Some statistics on fixups
+		int fixupCount = 0;
+		int fixupsHandled = 0;
+		int fixupsUnhandled = 0;
+		int fixupsByType[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+		
+		log.appendMsg(String.format("[Object#%x] Mapping to memory location %08x - %08x (selector %03x)", 
 				object.number, 
 				getBaseAddress(object),
-				getBaseAddress(object) + object.size
+				getBaseAddress(object) + object.size,
+				getSelector(object)
 		));
 		
+		// Loop through all pages for this object, apply fixups per page and add them together
 		for (int j = 0; j < object.pageCount; j++) {
 			// Page map indices are one-based, so subtract one 
 			long index = object.pageTableIndex + j - 1;
@@ -143,7 +181,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			
 			int fixupBegin = le.getReader().readInt(fixupPageMapOffset + index*4);
 			int fixupEnd = le.getReader().readInt(fixupPageMapOffset + index*4 + 4);					
-			long pageOffset  = ib.dataPagesOffset + (entry.getIndex()-1)*pageSize;
+			long pageOffset  = header.dataPagesOffset + (entry.getIndex()-1)*pageSize;
 
 			
 			// Read page from file
@@ -152,7 +190,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			byte[] pageData;
 			var isLastPage = j == object.pageCount - 1;
 			if (isLastObject && isLastPage) {
-				pageData = r.readNextByteArray(ib.lastPageSize);
+				pageData = r.readNextByteArray(header.lastPageSize);
 			} else {
 				pageData = r.readNextByteArray((int) pageSize);	
 			}
@@ -164,21 +202,35 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				
 				int current = 0;
 				while (current < fixupDataSize) {
+					/**
+					 * Fixup Record "SRC / FLAGS / SRCOFF" 
+					 */
+					
+					// SRC
 					byte sourceType = fixupData[current];
+					
+					// FLAGS
 					byte targetFlags = fixupData[current+1];
+					String targetFlagsLabel = "";
 					boolean isSourceList = (sourceType & 0x20) > 0;
+					//boolean isSourceAlias = (sourceType & 0x10) > 0;
 					boolean is16bitSelectorFixup = (sourceType & 0xf) == 2;
 					boolean is32bitTargetOffset = false;
 					boolean objectNumber16Bit = false;
 					if ((targetFlags & 0x10) > 0) {
 						is32bitTargetOffset = true;
-						//targetFlagsLabel += " 32-bit target offset,";
+						targetFlagsLabel += " 32-bit target offset,";
+					} else {
+						targetFlagsLabel += " 16-bit target offset,";
 					}
 					if ((targetFlags & 0x40) > 0) {
 						objectNumber16Bit = true;
-						//targetFlagsLabel += " 16-bit object number,";
+						targetFlagsLabel += " 16-bit object number,";
+					} else {
+						targetFlagsLabel += " 8-bit object number,";
 					}
 					
+					// SRCOFF
 					byte sourceCount = 0;
 					short sourceOffset = 0;
 					if (isSourceList) {
@@ -193,9 +245,12 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						current += 4;
 					}
 					
+					/*
+					 * Fixup Record "Target data" (OBJNUM / TRGOFF)
+					 */
+					
+					// Get target object number
 					short objectNumber = 0;
-					// Target data
-
 					if (objectNumber16Bit) {
 						ByteBuffer bb = ByteBuffer.allocate(2);
 						bb.order(ByteOrder.LITTLE_ENDIAN);
@@ -208,6 +263,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						current++;
 					}
 					
+					// Get target offset (i.e the target address to fix at the source)
 					int targetOffset = 0;
 					if ((targetFlags & 0x3) == 0) {
 						if (is16bitSelectorFixup) {
@@ -239,14 +295,74 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					if (isSourceList) {
 						for (int k = 0; k < sourceCount; k++) {
 							current += 2;
-							
 							// read sources..
 						}
 					}
 					
-					if ((sourceType & 0xf) == 7) {
-						int base = getBaseAddress(le.getObjects().get(objectNumber-1));
-						int value = base + targetOffset;								
+					// Apply the actual fixup
+					int base = getBaseAddress(le.getObjects().get(objectNumber-1));
+					fixupsByType[sourceType & 0xf]++;
+					if ((sourceType & 0xf) == LxFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
+						int value = base + targetOffset;
+						if (logOffsets32bit) {
+							log.appendMsg(String.format(
+								"32-bit offset fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
+								fixupCount, 
+								getBaseAddress(object) + j*pageSize + sourceOffset,
+								index,
+								value, objectNumber,
+								targetFlags, targetFlagsLabel
+							));
+							fixupCount++;
+						}
+						if (sourceOffset >= 0 && sourceOffset < pageData.length) {
+							pageData[sourceOffset] = (byte)(value & 0xff);
+						}
+						if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
+							pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);						
+						}
+						if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
+							pageData[sourceOffset+2] = (byte)((value & 0xff0000)>>16);
+						}
+						if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
+							pageData[sourceOffset+3] = (byte)((value & 0xff000000)>>24);
+						}
+						fixupsHandled++;
+					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
+						int value = base + targetOffset;
+						if (logOffsets16bit) {
+							log.appendMsg(String.format(
+								"16-bit offset fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
+								fixupCount, 
+								getBaseAddress(object) + j*pageSize + sourceOffset,
+								index,
+								value, objectNumber,
+								targetFlags, targetFlagsLabel
+							));
+							fixupCount++;
+						}
+						if (sourceOffset >= 0 && sourceOffset < pageData.length) {
+							pageData[sourceOffset] = (byte)(value & 0xff);
+						}
+						if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
+							pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);						
+						}
+						fixupsHandled++;
+					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
+						int value = base + targetOffset;
+						if (logSelfRel) {
+							log.appendMsg(String.format(
+								"32-bit self-ref fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
+								fixupCount, 
+								getBaseAddress(object) + j*pageSize + sourceOffset,
+								index,
+								value, objectNumber,
+								targetFlags, targetFlagsLabel
+							));
+							fixupCount++;
+						}
+						long address = getBaseAddress(object) + j*pageSize + sourceOffset;
+						value = (int) (value - address - 4);
 						if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 							pageData[sourceOffset] = (byte)(value & 0xff);
 						}
@@ -257,34 +373,82 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 							pageData[sourceOffset+2] = (byte)((value & 0xff0000)>>16);
 						}
 						if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
-
 							pageData[sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
-					} else if ((sourceType & 0xf) == 2) {
+						fixupsHandled++;
+					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_1616PTR_FIXUP) {
+						if (log1616pointer) {
+							log.appendMsg(String.format(
+								"16:16 pointer fixup #%x at %08x (page %03x) -> %02x:%04x (object #%x, target flags: %2x %s)",
+								fixupCount, 
+								getBaseAddress(object) + j*pageSize + sourceOffset,
+								index,
+								base, targetOffset, objectNumber,
+								targetFlags, targetFlagsLabel
+							));
+							fixupCount++;
+						}
+						if (sourceOffset >= 0 && sourceOffset < pageData.length) {
+							pageData[sourceOffset] = (byte)(base & 0xff);
+						}
+						if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
+							pageData[sourceOffset+1] = (byte)((base & 0xff00)>>8);						
+						}
+						if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
+							pageData[sourceOffset+2] = (byte)(targetOffset & 0xff);
+						}
+						if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
+							pageData[sourceOffset+3] = (byte)((targetOffset & 0xff00)>>8);
+						}
+						fixupsHandled++;
+					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
 						// 16 bit selector fixup
+						fixupsHandled++;
 					} else {
-						log.appendMsg(String.format(
-							"WARNING: unhandled fixup #%x at %08x (type %x, page %03x): %s -> object#%x:%x",
-							unhandled, 
-							getBaseAddress(object) + index * pageSize + sourceOffset,
-							sourceType, index,
-							isSourceList ? "source list " + sourceCount : String.format("%x", sourceOffset),
-							objectNumber, targetOffset
-						));
-						unhandled++;
+						if (warnUnhandled) {
+							log.appendMsg(String.format(
+								"WARNING: unhandled fixup #%x at %08x (type %02x, page %03x): %s -> object#%x:%x, target flags: %2x",
+								fixupCount, 
+								base + index * pageSize + sourceOffset,
+								sourceType, index,
+								isSourceList ? "source list " + sourceCount : String.format("%x", sourceOffset),
+								objectNumber, targetOffset,
+								targetFlags
+							));
+							fixupCount++;
+						}
+						fixupsUnhandled++;
 					}
 				}
 			}
+			
+			
 			
 			// Copy page into object block
 			System.arraycopy(pageData, 0, block, (int) blockIndex, pageData.length);
 			blockIndex += pageSize;
 		}
 		
+		// Log fixup statistics
+		ArrayList<String> byType = new ArrayList<>();
+		for (int i = 0; i < 9; i++) {
+			if (fixupsByType[i] > 0) {
+				byType.add(String.format("%d(%d)", fixupsByType[i], i));
+			}
+		}
+		log.appendMsg(String.format(
+			"Object #%x: Found %d fixups total, %d handled, %d unhandled, by type: %s",
+			object.number,
+			fixupsHandled + fixupsUnhandled, 
+			fixupsHandled, 
+			fixupsUnhandled,
+			String.join(", ", byType)
+		));
+		
 		return block;
 	}
 	
-	private int getBaseAddress(ObjectMapEntry object) {
+	private int getBaseAddress(ObjectTableEntry object) {
 		int index = object.number - 1;
 		if (baseAddresses != null && baseAddresses.length > index) {
 			if (baseAddresses[index] != 0) {
@@ -293,12 +457,30 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		}
 		return object.base;
 	}
+	
+	private int getSelector(ObjectTableEntry object) {
+		int index = object.number - 1;
+		if (selectors != null && selectors.length > index) {
+			if (selectors[index] != 0) {
+				return selectors[index];
+			}
+		}
+		return index;
+	}
 
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean isLoadIntoProgram) {
 		var list = new ArrayList<Option>();
-		list.add(new Option(OPTION_BASE_ADDRESSES, ""));
+		list.add(new Option(GROUP_OVERRIDES, OPTION_BASE_ADDRESSES, ""));
+		list.add(new Option(GROUP_OVERRIDES, OPTION_OBJECT_SELECTORS, ""));
+		list.add(new Option(GROUP_LOGGING, OPTION_WARN_UNHANDLED_FIXUP, true));
+		list.add(new Option(GROUP_LOGGING, OPTION_LOG_16BIT_OFFSET, false));
+		list.add(new Option(GROUP_LOGGING, OPTION_LOG_32BIT_OFFSET, false));
+		list.add(new Option(GROUP_LOGGING, OPTION_LOG_32BIT_SELFREL, false));
+		list.add(new Option(GROUP_LOGGING, OPTION_LOG_1616_POINTER, false));
+		list.add(new Option(GROUP_INIT, OPTION_DISASSEMBLE, true));
+		list.add(new Option(GROUP_INIT, OPTION_OMIT_ENTRY, false));
 		return list;
 	}
 
@@ -317,8 +499,34 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					} else {
 						baseAddresses[i] = 0;
 					}
-					
 				}
+			} else if (option.getName().equals(OPTION_OBJECT_SELECTORS)) {
+				String value = option.getValue().toString();
+				String[] values = value.split(",");
+				selectors = new int[values.length];
+				for (int i = 0; i < values.length; i++) {
+					String v = values[i];
+					v = v.replaceAll("0x", "");
+					if (v.length() > 0) {
+						selectors[i] = Integer.parseInt(v, 16);	
+					} else {
+						selectors[i] = 0;
+					}
+				}
+			} else if (option.getName().equals(OPTION_OMIT_ENTRY)) {
+				omitEntry = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_DISASSEMBLE)) {
+				disassembleEntry = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_LOG_16BIT_OFFSET)) {
+				logOffsets16bit = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_LOG_32BIT_OFFSET)) {
+				logOffsets32bit = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_LOG_32BIT_SELFREL)) {
+				logSelfRel = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_LOG_1616_POINTER)) {
+				log1616pointer = Boolean.parseBoolean(option.getValue().toString());
+			} else if (option.getName().equals(OPTION_WARN_UNHANDLED_FIXUP)) {
+				warnUnhandled = Boolean.parseBoolean(option.getValue().toString());
 			}
 		}
 

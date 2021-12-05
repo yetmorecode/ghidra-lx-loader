@@ -4,7 +4,6 @@ import java.io.IOException;
 
 import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.util.Conv;
-import ghidra.util.Msg;
 import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
 public class LxHeader extends yetmorecode.file.format.lx.LxHeader {
@@ -14,8 +13,10 @@ public class LxHeader extends yetmorecode.file.format.lx.LxHeader {
 		reader.setPointerIndex(Conv.shortToInt(index));
 
 		signature = reader.readNextShort();
-		if (signature != yetmorecode.file.format.lx.LxHeader.SIGNATURE_LE) {
-			Msg.info("LE", String.format("wrong magic %x", signature));
+		if (signature != yetmorecode.file.format.lx.LxHeader.SIGNATURE_LE &&
+			signature != yetmorecode.file.format.lx.LxHeader.SIGNATURE_LX &&
+			signature != yetmorecode.file.format.lx.LxHeader.SIGNATURE_LC
+		) {
 			throw new InvalidHeaderException();
 		}
 		

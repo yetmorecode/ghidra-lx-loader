@@ -7,7 +7,6 @@ import generic.continues.GenericFactory;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.bin.format.mz.DOSHeader;
-import yetmorecode.file.format.lx.ObjectTableEntry;
 import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
 
@@ -15,7 +14,7 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
     private FactoryBundledWithBinaryReader reader;
     DOSHeader mzHeader;
     
-    public ArrayList<ObjectMapEntry> objects = new ArrayList<>();
+    public ArrayList<ObjectTableEntry> objects = new ArrayList<>();
     
 	public LxExecutable(GenericFactory factory, ByteProvider bp) throws IOException, InvalidHeaderException {
     	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
@@ -27,7 +26,7 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
         	//objectTable = new ArrayList<ObjectMapEntry>(header.objectCount);
         	int objectTableOffset = mzHeader.e_lfanew() + header.objectTableOffset;
         	for (int i = 0; i < header.objectCount; i++) {
-        		ObjectMapEntry e = new ObjectMapEntry(reader, objectTableOffset + i * ObjectTableEntry.SIZE);
+        		ObjectTableEntry e = new ObjectTableEntry(reader, objectTableOffset + i * yetmorecode.file.format.lx.ObjectTableEntry.SIZE);
         		e.number = i+1;
         		//objectTable.add(e);
         		objects.add(e);
@@ -55,7 +54,7 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
 		return (LxHeader) header;
 	}
 
-	public ArrayList<ObjectMapEntry> getObjects() {
+	public ArrayList<ObjectTableEntry> getObjects() {
 		return objects;
 	}
 }
