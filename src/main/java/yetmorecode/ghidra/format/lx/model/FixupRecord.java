@@ -25,12 +25,12 @@ public class FixupRecord extends LxFixupRecord implements StructConverter {
 		"byte",
 		"inv1",
 		"sel16",
-		"ptr1616",
+		"p1616",
 		"inv4",
 		"off16",
-		"ptr1632",
+		"p1632",
 		"off32",
-		"off32self",
+		"off32s",
 	};
 	
 	private StructureDataType dt;

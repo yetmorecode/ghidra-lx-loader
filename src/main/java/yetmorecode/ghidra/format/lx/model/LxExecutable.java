@@ -122,6 +122,14 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
 		return fixupPageTable[page];
 	}
 	
+	public int totalFixups() {
+		int total = 0;
+		for (var i = 1; i <= header.pageCount; i++) {
+			total += fixups.get(i).size();
+		}
+		return total;
+	}
+	
 	public boolean objectHasFixups(ObjectTableEntry object) {
 		var total = 0;
 		for (int i = 0; i < object.pageCount; i++) {
