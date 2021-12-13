@@ -7,14 +7,18 @@ import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 
 public class ObjectTableEntry extends yetmorecode.file.format.lx.ObjectTableEntry {
 
+	public int offset;
+	public int padding;
+	
 	public ObjectTableEntry(FactoryBundledWithBinaryReader reader, int index) throws IOException {
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);
-		size = reader.readNextInt();
+		size = reader.readNextInt();		
 		base = reader.readNextInt();
 		flags = reader.readNextInt();
 		pageTableIndex = reader.readNextInt();
 		pageCount = reader.readNextInt();
+		padding = reader.readNextInt();
 		reader.setPointerIndex(oldIndex);
 	}
 	

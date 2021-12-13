@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.loader.lx;
+package yetmorecode.ghidra;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -11,22 +11,40 @@ import generic.continues.RethrowContinuesFactory;
 import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.ByteProvider;
+import ghidra.app.util.bin.StructConverter;
 import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.importer.MessageLogContinuesFactory;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
+import ghidra.program.database.mem.FileBytes;
 import ghidra.program.flatapi.FlatProgramAPI;
+import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.data.ArrayDataType;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeConflictException;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
+import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.UsrException;
 import ghidra.util.task.TaskMonitor;
 import yetmorecode.file.format.lx.LxFixupRecord;
+import yetmorecode.file.format.lx.LxHeader;
 import yetmorecode.ghidra.format.lx.LxExecutable;
 import yetmorecode.ghidra.format.lx.ObjectTableEntry;
 import yetmorecode.ghidra.format.lx.PageMapEntry;
+import yetmorecode.ghidra.format.lx.datatype.FixupSectionType;
+import yetmorecode.ghidra.format.lx.datatype.LoaderSectionType;
+import yetmorecode.ghidra.format.lx.datatype.ObjectMapEntryType;
 import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
 /**
@@ -98,16 +116,22 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		log = l;
 		monitor.setMessage(String.format("Processing %s..", getName()));
 		ContinuesFactory factory = MessageLogContinuesFactory.create(log);
-
-		MemoryBlockUtils.createFileBytes(program, provider, monitor);		
 		AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
 		LxExecutable executable;
+		
+		// Try parsing the executable
+		int id = program.startTransaction("Loading..");
+		boolean success = false;
 		try {
 			executable = new LxExecutable(factory, provider);
-			var header = executable.getLeHeader();
-			log.appendMsg(String.format("Number of objects: %x", header.objectCount));
+
+			monitor.setMessage(String.format("Processing %s...", getName()));
+			// Map MZ and LE image
+			createHeaderTypes(executable, program, provider, monitor);
 			
 			// Log verbose object table information
+			var header = executable.getLeHeader();
+			log.appendMsg(String.format("Number of objects: %x", header.objectCount));
 			for (var object : executable.getObjects()) {
 				log.appendMsg(String.format(
 					"Object #%x base: %08x - %08x (%08x), pages: %03x - %03x (%03x total), flags: %s",
@@ -122,7 +146,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			for (var object : executable.getObjects()) {
 				byte[] block = createObjectBlock(executable, object, object.number == executable.getObjects().size());
 				program.getMemory().createInitializedBlock(
-					"object" + object.number, 
+					".object" + object.number, 
 					space.getAddress(getBaseAddress(object)), 
 					new ByteArrayInputStream(block), 
 					object.size, 
@@ -143,9 +167,92 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				}
 				api.createFunction(api.toAddr(eip), "_entry");	
 			}
+			success = true;
 		} catch (Exception e) {
 			e.printStackTrace();
+		} finally {
+			program.endTransaction(id, success);
 		}
+	}
+	
+	/**
+	 * Creates MZ and LE exe image memory block (in OTHER space) and types the data
+	 * 
+	 * LE have 4 regions:
+	 * - header (aka information section)
+	 * - loader section
+	 * - fixup section
+	 * - data pages section
+	 */
+	private void createHeaderTypes(LxExecutable executable, Program program, ByteProvider provider, TaskMonitor monitor) throws CancelledException, IOException, AddressOverflowException, UsrException {
+		var header = executable.getLeHeader();
+		var dosHeader = executable.getDosHeader();
+		var fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
+		
+		// MZ image
+		Address addr = AddressSpace.OTHER_SPACE.getAddress(0);
+		var b = MemoryBlockUtils.createInitializedBlock(
+			program, 
+			true, 
+			".mz", addr, 
+			fileBytes, 0, dosHeader.toDataType().getLength(), 
+			"Old MZ-style image (headers + stub)", 
+			null, 
+			true, false, false, 
+			null
+		);
+		createData(program, b.getStart(), dosHeader.toDataType());
+		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
+		
+		// LE header
+		addr = AddressSpace.OTHER_SPACE.getAddress(dosHeader.e_lfanew());
+		b = MemoryBlockUtils.createInitializedBlock(
+			program, 
+			true, 
+			String.format(".%s", header.getTypePrefix()), addr, 
+			fileBytes, dosHeader.e_lfanew(), header.dataPagesOffset - dosHeader.e_lfanew(), 
+			"Linear Executable Information", 
+			null, 
+			true, false, false, 
+			null
+		);
+		createData(program, b.getStart(), header.toDataType());
+		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_LE_HEADER", SourceType.ANALYSIS);
+		
+		// LE loader section
+		addr = b.getStart().add(header.objectTableOffset);
+		createData(
+			program, 
+			addr,
+			new LoaderSectionType(executable, header.fixupPageTableOffset - header.objectTableOffset)
+		);
+		program.getSymbolTable().createLabel(addr, "IMAGE_LE_LOADER", SourceType.ANALYSIS);
+		
+		// LE fixup section 
+		addr = b.getStart().add(header.fixupPageTableOffset);
+		createData(
+			program, 
+			addr,
+			new FixupSectionType(executable, header.dataPagesOffset - dosHeader.e_lfanew() - header.fixupPageTableOffset)
+		);
+		program.getSymbolTable().createLabel(addr, "IMAGE_LE_FIXUP", SourceType.ANALYSIS);
+	}
+	
+	private Data createData(Program program, Address address, DataType dt) {
+		try {
+			Data d = program.getListing().getDataAt(address);
+			if (d == null || !dt.isEquivalent(d.getDataType())) {
+				program.getListing().createData(address, dt);
+			}
+			return d;
+		}
+		catch (CodeUnitInsertionException e) {
+			Msg.warn(this, "LX data markup conflict at " + address + ": " + e.getMessage());
+		}
+		catch (DataTypeConflictException e) {
+			Msg.error(this, "LX data type markup conflict at " + address + ": " + e.getMessage());
+		}
+		return null;
 	}
 	
 	private byte[] createObjectBlock(LxExecutable le, ObjectTableEntry object, boolean isLastObject) throws IOException {
@@ -165,7 +272,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		int fixupsUnhandled = 0;
 		int fixupsByType[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 		
-		log.appendMsg(String.format("[Object#%x] Mapping to memory location %08x - %08x (selector %03x)", 
+		log.appendMsg(String.format("Mapping Object#%d to %08x - %08x (selector %03x)", 
 				object.number, 
 				getBaseAddress(object),
 				getBaseAddress(object) + object.size,
@@ -305,7 +412,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					if ((sourceType & 0xf) == LxFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
 						int value = base + targetOffset;
 						if (logOffsets32bit) {
-							log.appendMsg(String.format(
+							Msg.debug(this, String.format(
 								"32-bit offset fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
 								fixupCount, 
 								getBaseAddress(object) + j*pageSize + sourceOffset,
@@ -331,7 +438,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
 						int value = base + targetOffset;
 						if (logOffsets16bit) {
-							log.appendMsg(String.format(
+							Msg.debug(this, String.format(
 								"16-bit offset fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
 								fixupCount, 
 								getBaseAddress(object) + j*pageSize + sourceOffset,
@@ -351,7 +458,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
 						int value = base + targetOffset;
 						if (logSelfRel) {
-							log.appendMsg(String.format(
+							Msg.debug(this, String.format(
 								"32-bit self-ref fixup #%x at %08x (page %03x) -> %x (object #%x, target flags: %2x %s)",
 								fixupCount, 
 								getBaseAddress(object) + j*pageSize + sourceOffset,
@@ -378,13 +485,17 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						fixupsHandled++;
 					} else if ((sourceType & 0xf) == LxFixupRecord.SOURCE_1616PTR_FIXUP) {
 						if (log1616pointer) {
-							log.appendMsg(String.format(
-								"16:16 pointer fixup #%x at %08x (page %03x) -> %02x:%04x (object #%x, target flags: %2x %s)",
+							Msg.debug(this, String.format(
+								"16:16 pointer fixup #%x at %08x (page %03x) -> %02x:%04x (target flags: %2x %s) %2x %2x %2x %2x",
 								fixupCount, 
 								getBaseAddress(object) + j*pageSize + sourceOffset,
 								index,
 								base, targetOffset, objectNumber,
-								targetFlags, targetFlagsLabel
+								targetFlags, targetFlagsLabel,
+								pageData[sourceOffset],
+								pageData[sourceOffset+1],
+								pageData[sourceOffset+2],
+								pageData[sourceOffset+3]
 							));
 							fixupCount++;
 						}
@@ -405,18 +516,16 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						// 16 bit selector fixup
 						fixupsHandled++;
 					} else {
-						if (warnUnhandled) {
-							log.appendMsg(String.format(
-								"WARNING: unhandled fixup #%x at %08x (type %02x, page %03x): %s -> object#%x:%x, target flags: %2x",
-								fixupCount, 
-								base + index * pageSize + sourceOffset,
-								sourceType, index,
-								isSourceList ? "source list " + sourceCount : String.format("%x", sourceOffset),
-								objectNumber, targetOffset,
-								targetFlags
-							));
-							fixupCount++;
-						}
+						Msg.warn(this, String.format(
+							"WARNING: unhandled fixup #%x at %08x (type %02x, page %03x): %s -> object#%x:%x, target flags: %2x",
+							fixupCount, 
+							base + index * pageSize + sourceOffset,
+							sourceType, index,
+							isSourceList ? "source list " + sourceCount : String.format("%x", sourceOffset),
+							objectNumber, targetOffset,
+							targetFlags
+						));
+						fixupCount++;
 						fixupsUnhandled++;
 					}
 				}
@@ -429,22 +538,36 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			blockIndex += pageSize;
 		}
 		
+		/*
 		// Log fixup statistics
 		ArrayList<String> byType = new ArrayList<>();
+		String names[] = {
+			"byte",
+			"inv1",
+			"sel16",
+			"ptr16:16",
+			"inv4",
+			"off16",
+			"ptr16:32",
+			"off32",
+			"off32self",
+		};
 		for (int i = 0; i < 9; i++) {
 			if (fixupsByType[i] > 0) {
-				byType.add(String.format("%d(%d)", fixupsByType[i], i));
+				byType.add(String.format("%s: %d", names[i], fixupsByType[i]));
 			}
 		}
-		log.appendMsg(String.format(
-			"[Object#%x] Found %d fixups total, %d handled, %d unhandled, by type: %s",
-			object.number,
-			fixupsHandled + fixupsUnhandled, 
-			fixupsHandled, 
-			fixupsUnhandled,
-			String.join(", ", byType)
-		));
-		
+		if (fixupsHandled + fixupsUnhandled > 0) {
+			log.appendMsg(String.format(
+				".object%d: %11s [%s]",
+				object.number,
+				String.format("%d fixups", fixupsHandled + fixupsUnhandled),
+				
+				String.join(", ", byType)
+			));
+		}
+		*/
+			
 		return block;
 	}
 	

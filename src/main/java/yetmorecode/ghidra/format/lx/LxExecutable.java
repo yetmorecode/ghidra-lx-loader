@@ -15,21 +15,31 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
     DOSHeader mzHeader;
     
     public ArrayList<ObjectTableEntry> objects = new ArrayList<>();
+    public int[] fixupPageTable;
     
 	public LxExecutable(GenericFactory factory, ByteProvider bp) throws IOException, InvalidHeaderException {
     	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
+    	// Try reading MZ header
         mzHeader = DOSHeader.createDOSHeader(reader);
 
         if (mzHeader.isDosSignature()) {
+        	// Try reading LX header
         	header = new LxHeader(reader, (short) mzHeader.e_lfanew());
         	
-        	//objectTable = new ArrayList<ObjectMapEntry>(header.objectCount);
+        	// Read object table
         	int objectTableOffset = mzHeader.e_lfanew() + header.objectTableOffset;
         	for (int i = 0; i < header.objectCount; i++) {
-        		ObjectTableEntry e = new ObjectTableEntry(reader, objectTableOffset + i * yetmorecode.file.format.lx.ObjectTableEntry.SIZE);
+        		var offset = objectTableOffset + i * yetmorecode.file.format.lx.ObjectTableEntry.SIZE;
+        		ObjectTableEntry e = new ObjectTableEntry(reader, offset);
         		e.number = i+1;
-        		//objectTable.add(e);
         		objects.add(e);
+        	}
+        	
+        	// Read fixup page table
+        	fixupPageTable = new int[header.pageCount+1];
+        	var tableOffset = getDosHeader().e_lfanew() + header.fixupPageTableOffset;
+        	for (int i = 0; i <= header.pageCount; i++) {
+        		fixupPageTable[i] = getReader().readInt(tableOffset + i * 4);
         	}
         }
     }
@@ -53,9 +63,26 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
 	public LxHeader getLeHeader() {
 		return (LxHeader) header;
 	}
-
+	
 	public ArrayList<ObjectTableEntry> getObjects() {
 		return objects;
+	}
+	
+	public int getFixupBegin(int page) {
+		return fixupPageTable[page-1];
+	}
+	
+	public int getFixupEnd(int page) {
+		return fixupPageTable[page];
+	}
+	
+	public boolean objectHasFixups(ObjectTableEntry object) {
+		var total = 0;
+		for (int i = 0; i < object.pageCount; i++) {
+			var page = object.pageTableIndex + i;
+			total += getFixupEnd(page) - getFixupBegin(page);
+		}
+		return total > 0;
 	}
 }
 
