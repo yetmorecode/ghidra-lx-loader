@@ -1,13 +1,19 @@
 package yetmorecode.ghidra.format.lx.datatype;
 
+import java.io.IOException;
+
 import ghidra.app.util.bin.StructConverter;
 import ghidra.program.model.data.ArrayDataType;
+import ghidra.program.model.data.Category;
 import ghidra.program.model.data.StructureDataType;
-import yetmorecode.ghidra.format.lx.LxExecutable;
+import ghidra.program.model.listing.Program;
+import ghidra.util.exception.UsrException;
+import yetmorecode.ghidra.format.lx.LoaderOptions;
+import yetmorecode.ghidra.format.lx.model.LxExecutable;
 
 public class FixupSectionType extends StructureDataType {
 
-	public FixupSectionType(LxExecutable executable, int end) {
+	public FixupSectionType(LxExecutable executable, int end, LoaderOptions options, Category cat, Program program) throws UsrException, IOException {
 		super("IMAGE_LE_FIXUP", 0);
 		
 		var h = executable.header;
@@ -18,9 +24,15 @@ public class FixupSectionType extends StructureDataType {
 			+ "table to indicate the end of the Fixup Record Table."
 		);
 		
+		
+		
 		for (var object : executable.getObjects()) {
 			if (executable.objectHasFixups(object)) {
-				add(new ObjectFixupsType(executable, object), "fixups_object" + object.number, "Fixup records for object #" + object.number);
+				add(
+					new ObjectFixupsType(executable, object, options, cat, program), 
+					"fixups_object" + object.number, 
+					"Fixup records for object #" + object.number
+				);
 			}
 		}
 		

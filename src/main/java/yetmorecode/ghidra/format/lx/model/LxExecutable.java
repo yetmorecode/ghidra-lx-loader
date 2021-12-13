@@ -1,13 +1,15 @@
-package yetmorecode.ghidra.format.lx;
+package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 import generic.continues.GenericFactory;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.bin.format.mz.DOSHeader;
-import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
+import yetmorecode.ghidra.format.lx.InvalidHeaderException;
+import yetmorecode.ghidra.format.lx.LoaderOptions;
 
 
 public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
@@ -16,8 +18,10 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
     
     public ArrayList<ObjectTableEntry> objects = new ArrayList<>();
     public int[] fixupPageTable;
+    public HashMap<Integer, ArrayList<FixupRecord>> fixups = new HashMap<>();
+    public int fixupCount;
     
-	public LxExecutable(GenericFactory factory, ByteProvider bp) throws IOException, InvalidHeaderException {
+	public LxExecutable(GenericFactory factory, ByteProvider bp, LoaderOptions options) throws IOException, InvalidHeaderException {
     	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
     	// Try reading MZ header
         mzHeader = DOSHeader.createDOSHeader(reader);
@@ -41,8 +45,50 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
         	for (int i = 0; i <= header.pageCount; i++) {
         		fixupPageTable[i] = getReader().readInt(tableOffset + i * 4);
         	}
+        	
+        	// Read fixups
+        	var fixupRecordOffset = getDosHeader().e_lfanew() + header.fixupRecordTableOffset;
+        	fixupCount = 0;
+        	//for (int i = 1; i <= header.pageCount; i++) {
+        	for (var object : objects) {
+        		for (var i = 0; i < object.pageCount; i++) {
+        			var page = object.pageTableIndex + i;
+	        		fixups.put(page, new ArrayList<>());
+	        		var fixupBegin = getFixupBegin(page);
+	        		var fixupEnd = getFixupEnd(page);
+	        		var fixupDataSize = fixupEnd - fixupBegin;
+	        		var current = 0;
+	    			while (current < fixupDataSize) {
+	    				var fixup = new FixupRecord(
+    						reader, 
+    						fixupRecordOffset + fixupBegin + current, 
+    						++fixupCount, 
+    						options.getBaseAddress(object),
+    						i
+	    				);
+	    				fixups.get(page).add(fixup);
+	    				current += fixup.size;
+	    			}
+        		}
+        	}
         }
     }
+	
+	public static void checkProvider(GenericFactory factory, ByteProvider provider) throws InvalidHeaderException, IOException {
+		if (provider.length() < 4) {
+			throw new InvalidHeaderException("File must have more than 4 bytes of content");
+		}
+		var reader = new FactoryBundledWithBinaryReader(factory, provider, true);
+		
+    	// Try parsing MZ header
+        var mzHeader = DOSHeader.createDOSHeader(reader);
+        if (!mzHeader.isDosSignature()) {
+        	throw new InvalidHeaderException("No MS-DOS header found (invalid signature)"); 
+        }
+        
+        // Try parsing LX Header
+    	new LxHeader(reader, (short) mzHeader.e_lfanew());
+	}
     
     /**
      * Returns the underlying binary reader.

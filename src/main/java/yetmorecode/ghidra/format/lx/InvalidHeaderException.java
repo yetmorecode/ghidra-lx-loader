@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.format.lx.exception;
+package yetmorecode.ghidra.format.lx;
 
 /**
  * An exception class to handle encountering
@@ -6,4 +6,8 @@ package yetmorecode.ghidra.format.lx.exception;
  */
 public class InvalidHeaderException extends Exception {
 	private static final long serialVersionUID = 1L;
+	
+	public InvalidHeaderException(String message) {
+		super(message);
+	}
 }

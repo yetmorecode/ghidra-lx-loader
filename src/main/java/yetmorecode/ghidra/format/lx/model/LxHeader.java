@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.format.lx;
+package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
@@ -9,10 +9,10 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.util.Conv;
 import ghidra.util.exception.DuplicateNameException;
+import yetmorecode.ghidra.format.lx.InvalidHeaderException;
 import yetmorecode.ghidra.format.lx.datatype.LxByteOrder;
 import yetmorecode.ghidra.format.lx.datatype.LxCpuType;
 import yetmorecode.ghidra.format.lx.datatype.LxOSType;
-import yetmorecode.ghidra.format.lx.exception.InvalidHeaderException;
 
 public class LxHeader extends yetmorecode.file.format.lx.LxHeader implements StructConverter {
 	
@@ -31,7 +31,7 @@ public class LxHeader extends yetmorecode.file.format.lx.LxHeader implements Str
 			signature != SIGNATURE_LX &&
 			signature != SIGNATURE_LC
 		) {
-			throw new InvalidHeaderException();
+			throw new InvalidHeaderException("Signature does not match LX/LE/LC");
 		}
 		dt.add(
 			new ArrayDataType(ASCII,2,1), 

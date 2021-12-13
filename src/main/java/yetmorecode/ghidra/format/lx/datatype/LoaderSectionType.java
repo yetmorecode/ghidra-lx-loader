@@ -3,7 +3,7 @@ package yetmorecode.ghidra.format.lx.datatype;
 import ghidra.app.util.bin.StructConverter;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.StructureDataType;
-import yetmorecode.ghidra.format.lx.LxExecutable;
+import yetmorecode.ghidra.format.lx.model.LxExecutable;
 
 public class LoaderSectionType extends StructureDataType {
 

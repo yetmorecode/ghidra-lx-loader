@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.format.lx;
+package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 import java.util.ArrayList;
