@@ -135,6 +135,10 @@ public class FixupRecord extends LxFixupRecord implements StructConverter {
 	public boolean isTargetOffset32Bit() {
 		return (targetFlags & 0x10) > 0;
 	}
+	
+	public boolean is1616PointerFixup() {
+		return getSourceType() == SOURCE_1616PTR_FIXUP;
+	}
 
 	@Override
 	public DataType toDataType() throws DuplicateNameException, IOException {

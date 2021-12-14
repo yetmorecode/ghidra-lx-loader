@@ -41,7 +41,7 @@ public class LoaderOptions {
 	// Default options
 	public boolean disassembleEntry = true;
 	public boolean addEntry = true;
-	public boolean mapExtra = true;
+	public boolean mapExtra = false;
 	public boolean[] enableType = new boolean[9];
 	
 	// More options available through "loader options"

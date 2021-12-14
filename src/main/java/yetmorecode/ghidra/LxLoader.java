@@ -191,8 +191,9 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_LE_HEADER", SourceType.ANALYSIS);
 		log(CHECK + "Mapped LX Header Section");
 		
-		// LE loader section
+
 		if (loaderOptions.mapExtra) {
+			// LE loader section
 			addr = b.getStart().add(header.objectTableOffset);
 			monitor.setMessage(String.format(ARROW + "Mapping LX Loader section"));
 			createData(
@@ -202,9 +203,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			);
 			program.getSymbolTable().createLabel(addr, "IMAGE_LE_LOADER", SourceType.ANALYSIS);
 			log(CHECK + "Mapped LX Loader Section");
-		}
-			
-		if (loaderOptions.mapExtra) {
+		
 			// LE fixup section
 			var dm = program.getDataTypeManager();
 			var cat = dm.createCategory(new CategoryPath("/_le/_fixup"));
@@ -215,7 +214,8 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				header.dataPagesOffset - dosHeader.e_lfanew() - header.fixupPageTableOffset,
 				loaderOptions,
 				cat,
-				program
+				program,
+				b
 			);
 			createData(program, addr, ft);
 			program.getSymbolTable().createLabel(addr, "IMAGE_LE_FIXUP", SourceType.ANALYSIS);
@@ -277,11 +277,10 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		return null;
 	}
 	
-	private byte[] createObjectBlock(Program program, LxExecutable le, ObjectTableEntry object, boolean isLastObject) throws IOException, UsrException {
+	private byte[] createObjectBlock(Program program, LxExecutable le, ObjectTableEntry object, boolean isLastObject) throws IOException {
 		var header = le.getLeHeader();
 		var pageMapOffset = le.getDosHeader().e_lfanew() + header.pageTableOffset;
 		var pageSize = header.pageSize; 
-		var space = program.getAddressFactory().getDefaultAddressSpace();
 		
 		// Temporary memory to assemble all pages to one block
 		byte block[] = new byte[object.size+4096];
@@ -299,15 +298,6 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			
 			PageMapEntry entry = new PageMapEntry(le.getReader(), pageMapOffset + (index-1) * 4);
 			var pageOffset  = header.dataPagesOffset + (entry.getIndex()-1)*pageSize;
-
-			// Create a label for each page
-			if (loaderOptions.createPageLabels) {
-				program.getSymbolTable().createLabel(
-					space.getAddress(loaderOptions.getBaseAddress(object) + blockIndex), 
-					"LE_PAGE_" + index, 
-					SourceType.ANALYSIS
-				);
-			}
 			
 			// Read page from file
 			FactoryBundledWithBinaryReader r = le.getReader();
@@ -486,11 +476,16 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 					addr = unit.getAddress();
 				}
 				
-				var to = s.getAddress(loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset);
-				program.getReferenceManager().removeAllReferencesFrom(addr);
-				var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.ANALYSIS, 0, true);
-				program.getReferenceManager().addReference(ref);
-	
+				if (loaderOptions.fixupEnabled(f) && f.is1616PointerFixup()) {
+					// 16:16 pointer fixups are weird since they involve segment selectors
+					// and Ghidra only knows DOS segmented memory (no protected mode segmentation),
+					// so we remove the old ref and place on calculated by ourself
+					var to = s.getAddress(loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset);
+					program.getReferenceManager().removeAllReferencesFrom(addr);
+					var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.ANALYSIS, 0, true);
+					program.getReferenceManager().addReference(ref);	
+				}
+				
 				if (loaderOptions.createFixupLabels) {	
 					program.getListing().setComment(
 						addr, 
@@ -503,11 +498,12 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 				}
 			}
 		}
-		
+
+		// Create a label for each page
 		if (loaderOptions.createPageLabels) {
 			for (var i = 1; i <= exe.header.pageCount; i++) {
 				var addr = s.getAddress(header.dataPagesOffset - dosHeader.e_lfanew()).add((i-1)*header.pageSize);
-				program.getSymbolTable().createLabel(addr, "IMAGE_LE_DATA", SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(addr, "LE_PAGE_" + i, SourceType.ANALYSIS);
 			}
 		}
 	}

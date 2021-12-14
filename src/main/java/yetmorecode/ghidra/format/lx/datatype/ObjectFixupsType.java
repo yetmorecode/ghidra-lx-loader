@@ -2,10 +2,15 @@ package yetmorecode.ghidra.format.lx.datatype;
 
 import java.io.IOException;
 
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.Category;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.MemReferenceImpl;
+import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.UsrException;
 import yetmorecode.ghidra.format.lx.LoaderOptions;
 import yetmorecode.ghidra.format.lx.model.LxExecutable;
@@ -13,12 +18,16 @@ import yetmorecode.ghidra.format.lx.model.ObjectTableEntry;
 
 public class ObjectFixupsType extends StructureDataType {
 
-	public ObjectFixupsType(LxExecutable executable, ObjectTableEntry object, LoaderOptions options, Category cat, Program program) throws UsrException, IOException {
+	public ObjectFixupsType(LxExecutable executable, ObjectTableEntry object, LoaderOptions options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
 		super(String.format("%08x_%d", options.getBaseAddress(object), object.number), 0);
 		setCategoryPath(cat.getCategoryPath());
+		
+		// Iterate over all object pages
 		for (int i = 0; i < object.pageCount; i++) {
 			var page = object.pageTableIndex + i;
 			var pageSize = executable.header.pageSize;
+			
+			// If page has fixups
 			if (executable.fixups.get(page).size() > 0) {
 				var sub = new StructureDataType(String.format("%08x", options.getBaseAddress(object) + i*pageSize), 0);
 				sub.setCategoryPath(new CategoryPath(
@@ -29,17 +38,36 @@ public class ObjectFixupsType extends StructureDataType {
 					)
 				));
 				add(sub, "page_" + page, "Page #" + page + " fixups");
+				
+				// Each single fixup
+				var current = 0;
 				for (var f : executable.fixups.get(page)) {
+					// Add datatype
 					var fixupData = f.toDataType();
+					
 					fixupData.setCategoryPath(new CategoryPath(
-						String.format(
-							"%s/%08x/%08x",
+						String.format("%s/%08x/%08x",
 							cat.getCategoryPathName(),
 							options.getBaseAddress(object) + i*pageSize,
 							f.getSourceAddress()
 						)
 					));
 					sub.add(fixupData, "fix_" + f.index, "Fixup record #" + f.index);
+					
+					// Add xref
+					var to = b.getStart().add(executable.header.dataPagesOffset - executable.getDosHeader().e_lfanew() + (page-1)*pageSize + current);
+					var space = program.getAddressFactory().getDefaultAddressSpace();
+					var ref = new MemReferenceImpl(
+						space.getAddress(f.getSourceAddress()), 
+						to, 
+						RefType.DATA_IND, 
+						SourceType.ANALYSIS, 
+						0, 
+						false
+					);
+					program.getReferenceManager().addReference(ref);
+					
+					current += fixupData.getLength();
 				}	
 			}
 		}
