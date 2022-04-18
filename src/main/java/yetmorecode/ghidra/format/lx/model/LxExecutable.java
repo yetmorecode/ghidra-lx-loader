@@ -23,55 +23,61 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
     
 	public LxExecutable(GenericFactory factory, ByteProvider bp, LoaderOptions options) throws IOException, InvalidHeaderException {
     	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
-    	// Try reading MZ header
-        mzHeader = DOSHeader.createDOSHeader(reader);
-
-        if (mzHeader.isDosSignature()) {
-        	// Try reading LX header
-        	header = new LxHeader(reader, (short) mzHeader.e_lfanew());
-        	
-        	// Read object table
-        	int objectTableOffset = mzHeader.e_lfanew() + header.objectTableOffset;
-        	for (int i = 0; i < header.objectCount; i++) {
-        		var offset = objectTableOffset + i * yetmorecode.file.format.lx.ObjectTableEntry.SIZE;
-        		ObjectTableEntry e = new ObjectTableEntry(reader, offset);
-        		e.number = i+1;
-        		objects.add(e);
-        	}
-        	
-        	// Read fixup page table
-        	fixupPageTable = new int[header.pageCount+1];
-        	var tableOffset = getDosHeader().e_lfanew() + header.fixupPageTableOffset;
-        	for (int i = 0; i <= header.pageCount; i++) {
-        		fixupPageTable[i] = getReader().readInt(tableOffset + i * 4);
-        	}
-        	
-        	// Read fixups
-        	var fixupRecordOffset = getDosHeader().e_lfanew() + header.fixupRecordTableOffset;
-        	fixupCount = 0;
-        	//for (int i = 1; i <= header.pageCount; i++) {
-        	for (var object : objects) {
-        		for (var i = 0; i < object.pageCount; i++) {
-        			var page = object.pageTableIndex + i;
-	        		fixups.put(page, new ArrayList<>());
-	        		var fixupBegin = getFixupBegin(page);
-	        		var fixupEnd = getFixupEnd(page);
-	        		var fixupDataSize = fixupEnd - fixupBegin;
-	        		var current = 0;
-	    			while (current < fixupDataSize) {
-	    				var fixup = new FixupRecord(
-    						reader, 
-    						fixupRecordOffset + fixupBegin + current, 
-    						++fixupCount, 
-    						options.getBaseAddress(object),
-    						i
-	    				);
-	    				fixups.get(page).add(fixup);
-	    				current += fixup.size;
-	    			}
-        		}
-        	}
-        }
+    	var lfanew = 0;
+    	try {
+	    	// Try reading MZ header
+	        mzHeader = DOSHeader.createDOSHeader(reader);
+	        if (mzHeader.isDosSignature()) {
+	        	lfanew = mzHeader.e_lfanew();
+	        }
+    	} catch (Exception e) {
+    		
+    	}
+    	
+    	// Try reading LX header
+    	header = new LxHeader(reader, (short) lfanew);
+    	
+    	// Read object table
+    	int objectTableOffset = lfanew + header.objectTableOffset;
+    	for (int i = 0; i < header.objectCount; i++) {
+    		var offset = objectTableOffset + i * yetmorecode.file.format.lx.ObjectTableEntry.SIZE;
+    		ObjectTableEntry e = new ObjectTableEntry(reader, offset);
+    		e.number = i+1;
+    		objects.add(e);
+    	}
+    	
+    	// Read fixup page table
+    	fixupPageTable = new int[header.pageCount+1];
+    	var tableOffset = lfanew + header.fixupPageTableOffset;
+    	for (int i = 0; i <= header.pageCount; i++) {
+    		fixupPageTable[i] = getReader().readInt(tableOffset + i * 4);
+    	}
+    	
+    	// Read fixups
+    	var fixupRecordOffset = lfanew + header.fixupRecordTableOffset;
+    	fixupCount = 0;
+    	//for (int i = 1; i <= header.pageCount; i++) {
+    	for (var object : objects) {
+    		for (var i = 0; i < object.pageCount; i++) {
+    			var page = object.pageTableIndex + i;
+        		fixups.put(page, new ArrayList<>());
+        		var fixupBegin = getFixupBegin(page);
+        		var fixupEnd = getFixupEnd(page);
+        		var fixupDataSize = fixupEnd - fixupBegin;
+        		var current = 0;
+    			while (current < fixupDataSize) {
+    				var fixup = new FixupRecord(
+						reader, 
+						fixupRecordOffset + fixupBegin + current, 
+						++fixupCount, 
+						options.getBaseAddress(object),
+						i
+    				);
+    				fixups.get(page).add(fixup);
+    				current += fixup.size;
+    			}
+    		}
+    	}
     }
 	
 	public static void checkProvider(GenericFactory factory, ByteProvider provider) throws InvalidHeaderException, IOException {
@@ -82,12 +88,12 @@ public class LxExecutable extends yetmorecode.file.format.lx.LxExecutable {
 		
     	// Try parsing MZ header
         var mzHeader = DOSHeader.createDOSHeader(reader);
-        if (!mzHeader.isDosSignature()) {
-        	throw new InvalidHeaderException("No MS-DOS header found (invalid signature)"); 
+        var lfanew = 0;
+        if (mzHeader.isDosSignature()) {
+        	 lfanew = mzHeader.e_lfanew();
         }
-        
         // Try parsing LX Header
-    	new LxHeader(reader, (short) mzHeader.e_lfanew());
+    	new LxHeader(reader, (short) lfanew);
 	}
     
     /**

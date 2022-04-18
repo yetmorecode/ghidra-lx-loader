@@ -89,6 +89,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			e.printStackTrace();
 		} catch (InvalidHeaderException e) {
 			// Everything is ok, but the provided data is not a valid LX/LE/LC
+			System.out.println("foobar");
 		}
 		return loadSpecs;
 	}
@@ -379,7 +380,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 						fixupsHandled++;
 					} else {
 						Msg.warn(this, String.format(
-							"WARNING: unhandled fixup #%x_%s at %08x (type %02x, page %03x): %s -> object#%x:%x",
+							"WARNING: unhandled fixup #%x_%s at %08x (type %02x): %s -> object#%x:%x",
 							f.index, f.shortname(),  f.getSourceAddress(),
 							index,
 							f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", f.sourceOffset),
