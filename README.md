@@ -5,28 +5,23 @@ Download a release matching your ghidra version from the [releases](https://gith
 ## Features
 
 * Adds support for LX and LE-style executable formats to Ghidra
-* Objects are build with full page-map and fixup (relocation) support
+* Can load bound and unbound (like `sb.exe /u`) executables
+* Full page-map and fixup (relocation) support
 * MZ and LX image data (headers, loader section, etc.) can be mapped to an overlay 
-* Full fixup support for:
-  * 16-bit selector fixups (type 2)
-  * 16:16 pointer fixups (type 3)
-  * 16/32-bit offset fixups (type 5 & 7)
-  * 32-bit self-ref fixups (type 8)
-* Unimplemented fixups (not seen anywhere yet):
-  * byte fixups (type 0)
-  * 16:32 pointer fixups (type 6)
-  * Undefined by spec: type 1 & 4 
-* Customizable loader options:
-  * Manually override the object base addresses and segment selectors (good for syncing with a debugger / DOSBox)
-  * Map image to overlay:
-    * Map MZ Header
-    * Map LX Header
-    * Map LX Loader Section
-    * Map LX Fixup Section (fully typed!)
-    * Map LX Data Section (i.e. the unmodified page data)
-  * Log fixup statistics / Log individual fixup types
-  * Create labels for each fixup in memory
-  * Create labels for each page beginning in memory
+* Full fixup support for all types
+
+Various options can be specified when loading a file:
+
+* Manually override the object base addresses and segment selectors (good for syncing with a debugger / DOSBox)
+* Map image to overlay:
+  * Map MZ Header
+  * Map LX Header
+  * Map LX Loader Section
+  * Map LX Fixup Section (fully typed!)
+  * Map LX Data Section (i.e. the unmodified page data)
+* Create labels for each fixup in memory
+* Create labels for each page beginning in memory
+* Log fixup statistics / Log individual fixup types
   
 ![Options](data/options.png)
 
