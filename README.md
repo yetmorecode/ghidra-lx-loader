@@ -1,19 +1,22 @@
-# Ghidra Loader for the LX/LE executable file format
+# Ultimate Ghidra Loader for the LX/LE executable file format
 
 Download a release matching your ghidra version from the [releases](https://github.com/yetmorecode/ghidra-lx-loader/releases) to the `Extensions/Ghidra` inside your Ghidra installation and enabled it from `File > Install extensions...`.
 
 ## Features
 
-* Adds support for LX and LE-style executable formats to Ghidra
-* Can load bound and unbound (like `sb.exe /u`) executables
+* Supports LE/LX files in various formats:
+  * OS/2 LX-Style
+  * MSDOS DOS/16 LE-Style
+  * MSDOS DOS/4 LE-Style
+  * DOS32A sb.exe unbound LE/LX-Style
+  * Windows Virtual Device Driver (VxD)
 * Full page-map and fixup (relocation) support
-* MZ and LX image data (headers, loader section, etc.) can be mapped to an overlay 
-* Full fixup support for all types
+* Completely typed executable headers (and other image data) with comments
 
-Various options can be specified when loading a file:
+Optionally, various options can be specified individually for each file:
 
 * Manually override the object base addresses and segment selectors (good for syncing with a debugger / DOSBox)
-* Map image to overlay:
+* Map various image data to an overlay:
   * Map MZ Header
   * Map LX Header
   * Map LX Loader Section
