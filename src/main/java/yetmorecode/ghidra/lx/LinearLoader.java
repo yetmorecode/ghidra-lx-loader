@@ -1,4 +1,4 @@
-package yetmorecode.ghidra;
+package yetmorecode.ghidra.lx;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -38,15 +38,13 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.UsrException;
 import ghidra.util.task.TaskMonitor;
 import ghidra.program.model.data.ArrayDataType;
-import yetmorecode.file.format.lx.LxFixupRecord;
-import yetmorecode.ghidra.format.lx.InvalidHeaderException;
-import yetmorecode.ghidra.format.lx.LoaderOptions;
+import yetmorecode.file.format.lx.LinearFixupRecord;
+import yetmorecode.file.format.lx.LinearObjectTableEntry;
 import yetmorecode.ghidra.format.lx.datatype.FixupSectionType;
 import yetmorecode.ghidra.format.lx.datatype.LoaderSectionType;
 import yetmorecode.ghidra.format.lx.model.FixupRecord;
-import yetmorecode.ghidra.format.lx.model.LxExecutable;
-import yetmorecode.ghidra.format.lx.model.ObjectTableEntry;
-import yetmorecode.ghidra.format.lx.model.PageMapEntry;
+import yetmorecode.ghidra.format.lx.model.Header;
+import yetmorecode.ghidra.format.lx.model.Executable;
 
 /**
  * LxLoader - LX/LE/LC executable format loader
@@ -61,38 +59,41 @@ import yetmorecode.ghidra.format.lx.model.PageMapEntry;
  * 
  * @author yetmorecode@posteo.net
  */
-public class LxLoader extends AbstractLibrarySupportLoader {
-	private String name = "Linear Executable (LX/LE/LC)";
+public abstract class LinearLoader extends AbstractLibrarySupportLoader {
+	protected final static String CHECK = " " + (new String(new int[] { 0x2713 }, 0, 1)) + " ";
+	protected final static String CLOCK = " " + (new String(new int[] { 0x231b }, 0, 1)) + " ";
+	protected final static String HORSE = " " + (new String(new int[] { 0x2658 }, 0, 1)) + " ";
+	protected final static String ARROW = " " + (new String(new int[] { 0x2794 }, 0, 1)) + " ";
 	
-	private final static String CHECK = " " + (new String(new int[] { 0x2713 }, 0, 1)) + " ";
-	private final static String CLOCK = " " + (new String(new int[] { 0x231b }, 0, 1)) + " ";
-	private final static String HORSE = " " + (new String(new int[] { 0x2658 }, 0, 1)) + " ";
-	private final static String ARROW = " " + (new String(new int[] { 0x2794 }, 0, 1)) + " ";
-	
-	private MessageLog messageLog;
-	private LoaderOptions loaderOptions = new LoaderOptions();
+	protected MessageLog messageLog;
+	protected Options loaderOptions = new Options();
 	
 	@Override
-	public String getName() {
-		return name;
-	}
+	public abstract String getName();
 
+	public abstract void checkFormat(FactoryBundledWithBinaryReader reader) throws IOException, InvalidHeaderException;
+	
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
+		if (provider.length() < 4) {
+			return loadSpecs;
+		}
+		var reader = new FactoryBundledWithBinaryReader(RethrowContinuesFactory.INSTANCE, provider, true);
 		try {
-			LxExecutable.checkProvider(RethrowContinuesFactory.INSTANCE, provider);
+			checkFormat(reader);
 			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "borlandcpp"), true));
-			//loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "gcc"), true));
+			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "watcom"), false));
 		} catch (IOException e) {
-			Msg.error(this, String.format("IOException while reading LxExecutable: %s", e.getMessage()));
+			Msg.error(this, String.format("IOException while parsing LxExecutable: %s", e.getMessage()));
 			e.printStackTrace();
 		} catch (InvalidHeaderException e) {
 			// Everything is ok, but the provided data is not a valid LX/LE/LC
-			System.out.println("foobar");
 		}
 		return loadSpecs;
 	}
+	
+	public abstract void onLoadSuccess(Program program);
 
 	@Override
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
@@ -110,10 +111,9 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		int id = program.startTransaction(ARROW + "Loading..");
 		monitor.setMessage(String.format(ARROW + "Processing %s", getName()));
 		ContinuesFactory factory = MessageLogContinuesFactory.create(messageLog);
-		boolean success = false;
 		try {
 			// Parse EXE from file
-			var executable = new LxExecutable(factory, provider, loaderOptions);
+			var executable = new Executable(factory, provider, loaderOptions);
 			
 			// Map IMAGE data (MZ, LX)
 			createImageMappings(executable, program, provider, monitor);
@@ -124,55 +124,88 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			// Add entrypoint, disassemble, ..
 			createEntrypoint(executable, program, monitor);
 			
-			success = true;
+			onLoadSuccess(program);
+			program.endTransaction(id, true);
 		} catch (Exception e) {
 			e.printStackTrace();
-		} finally {
-			program.endTransaction(id, success);
+			program.endTransaction(id, false);
 		}
 	}
 	
 	/**
 	 * Creates MZ and LE exe image memory block (in OTHER space) and types the data
 	 * 
-	 * LE have 4 regions:
+	 * LX/LE have 3 main regions:
 	 * - header (aka information section)
-	 * - loader section
-	 * - fixup section
+	 * - loader section (mostly fixup/relocation data)
 	 * - data pages section
 	 */
-	private void createImageMappings(LxExecutable executable, Program program, ByteProvider provider, TaskMonitor monitor) throws CancelledException, IOException, AddressOverflowException, UsrException {
-		var header = executable.getLeHeader();
-		var dosHeader = executable.getDosHeader();
+	private void createImageMappings(Executable executable, Program program, ByteProvider provider, TaskMonitor monitor) throws CancelledException, IOException, AddressOverflowException, UsrException {
+		var header = (Header)executable.header;
+		var dosHeader = executable.mz;
 		var fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
 		Address addr;
-		MemoryBlock b;
-		
-		monitor.setMessage(String.format(ARROW + "Mapping Image data", executable.getLeHeader().getTypePrefix().toUpperCase()));
-		
-		// MZ image
-		addr = AddressSpace.OTHER_SPACE.getAddress(0);
-		b = MemoryBlockUtils.createInitializedBlock(
-			program, 
-			true, 
-			".mz", addr, 
-			fileBytes, 0, dosHeader.toDataType().getLength(), 
-			"Old MZ-style image (headers + stub)", 
-			null, 
-			true, false, false, 
-			null
-		);
-		createData(program, b.getStart(), dosHeader.toDataType());
-		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
-		log(CHECK + "Mapped MZ Header");
+		MemoryBlock b;		
+		monitor.setMessage(String.format(ARROW + "Mapping Image data", header.getTypePrefix().toUpperCase()));
 
-			
+		if (executable.mz.isDosSignature()) {
+			// MZ image
+			addr = AddressSpace.OTHER_SPACE.getAddress(0);
+			b = MemoryBlockUtils.createInitializedBlock(
+				program, 
+				true, 
+				".mz", addr, 
+				fileBytes, 0, executable.mz.toDataType().getLength(), 
+				"Old MZ-style image (headers + stub)", 
+				null, 
+				true, false, false, 
+				null
+			);
+			createData(program, b.getStart(), dosHeader.toDataType());
+			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
+			log(CHECK + "Mapped MZ Header");			
+		}
+		int count = 1;
+		for (var s : executable.dos16Headers.entrySet()) {
+			// BW DOS/16 image
+			addr = AddressSpace.OTHER_SPACE.getAddress(s.getKey());
+			b = MemoryBlockUtils.createInitializedBlock(
+				program, 
+				true, 
+				".bw" + count++, addr, 
+				fileBytes, s.getKey(), s.getValue().toDataType().getLength(), 
+				"BW DOS/16 Image", 
+				null, 
+				true, false, false, 
+				null
+			);
+			createData(program, b.getStart(), s.getValue().toDataType());
+			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_DOS16_HEADER", SourceType.ANALYSIS);
+			log(CHECK + "Mapped BW DOS/16 Header");
+		}
+		if (executable.mzSecondary != null) {
+			// MZ image
+			addr = AddressSpace.OTHER_SPACE.getAddress(executable.lfamz);
+			b = MemoryBlockUtils.createInitializedBlock(
+				program, 
+				true, 
+				".mz2", addr, 
+				fileBytes, executable.lfamz, executable.mzSecondary.toDataType().getLength(), 
+				"Old MZ-style image (headers + stub)", 
+				null, 
+				true, false, false, 
+				null
+			);
+			createData(program, b.getStart(), executable.mzSecondary.toDataType());
+			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
+			log(CHECK + "Mapped MZ Header");			
+		}
+
 		// LE header
-		addr = AddressSpace.OTHER_SPACE.getAddress(dosHeader.e_lfanew());
-		
-		var size = 0;
+		addr = AddressSpace.OTHER_SPACE.getAddress(executable.lfanew);
+		long size = 0;
 		if (loaderOptions.mapExtra) {
-			size = header.dataPagesOffset - dosHeader.e_lfanew();
+			size = ((executable.lfamz + header.dataPagesOffset) - executable.lfanew);
 			size += (header.pageCount-1) * header.pageSize + header.lastPageSize;
 		} else {
 			size = 196;
@@ -182,7 +215,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			program, 
 			true, 
 			String.format(".%s", header.getTypePrefix()), addr, 
-			fileBytes, dosHeader.e_lfanew(), size, 
+			fileBytes, executable.lfanew, size, 
 			"Linear Executable Information", 
 			null, 
 			true, false, false, 
@@ -191,7 +224,6 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		createData(program, b.getStart(), header.toDataType());
 		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_LE_HEADER", SourceType.ANALYSIS);
 		log(CHECK + "Mapped LX Header Section");
-		
 
 		if (loaderOptions.mapExtra) {
 			// LE loader section
@@ -212,7 +244,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			monitor.setMessage(String.format(ARROW + "Mapping LX Fixup Section (%d fixups total)", executable.fixupCount));
 			var ft = new FixupSectionType(
 				executable, 
-				header.dataPagesOffset - dosHeader.e_lfanew() - header.fixupPageTableOffset,
+				(int) (header.dataPagesOffset - executable.lfanew - header.fixupPageTableOffset),
 				loaderOptions,
 				cat,
 				program,
@@ -223,32 +255,32 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			log(CHECK + "Mapped LX Fixup Section");
 		
 			// LE Data Section
-			addr = b.getStart().add(header.dataPagesOffset - dosHeader.e_lfanew());
+			addr = b.getStart().add(header.dataPagesOffset - executable.lfanew);
 			monitor.setMessage(String.format(ARROW + "Mapping data pages (%d total)", executable.header.pageCount));
 			var all = new StructureDataType("IMAGE_LE_DATA", 0);
 			
 			// Full size pages
 			for (var i = 0; i < executable.header.pageCount-1; i++) {
 				var dt = new ArrayDataType(StructConverter.BYTE, header.pageSize, 0); 
-				addr = b.getStart().add(header.dataPagesOffset + i * header.pageSize - dosHeader.e_lfanew());
+				addr = b.getStart().add(header.dataPagesOffset + i * header.pageSize - executable.lfanew);
 				all.add(dt, "page_" + (i+1), "");
 			}
 			// Last page
 			var dt = new ArrayDataType(StructConverter.BYTE, header.lastPageSize, 0);
 			all.add(dt, "page_" + header.pageCount, "");
 			
-			addr = b.getStart().add(header.dataPagesOffset - dosHeader.e_lfanew());
+			addr = b.getStart().add(header.dataPagesOffset - executable.lfanew);
 			createData(program, addr, all);
 			log(CHECK + "Mapped LX Data Section");
 		}
 	}
 	
-	private void createObjects(LxExecutable executable, Program program, TaskMonitor monitor) throws IOException, UsrException {
+	private void createObjects(Executable executable, Program program, TaskMonitor monitor) throws IOException, UsrException {
 		// Map each object
 		var space = program.getAddressFactory().getDefaultAddressSpace();
-		for (var object : executable.getObjects()) {
+		for (var object : executable.objects) {
 			monitor.setMessage(String.format(ARROW + "Mapping .object%d", object.number));
-			byte[] block = createObjectBlock(program, executable, object, object.number == executable.getObjects().size());
+			byte[] block = createObjectBlock(program, executable, object, object.number == executable.objects.size());
 			program.getMemory().createInitializedBlock(
 				".object" + object.number, 
 				space.getAddress(loaderOptions.getBaseAddress(object)), 
@@ -278,9 +310,8 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		return null;
 	}
 	
-	private byte[] createObjectBlock(Program program, LxExecutable le, ObjectTableEntry object, boolean isLastObject) throws IOException {
-		var header = le.getLeHeader();
-		var pageMapOffset = le.getDosHeader().e_lfanew() + header.pageTableOffset;
+	private byte[] createObjectBlock(Program program, Executable le, LinearObjectTableEntry object, boolean isLastObject) throws IOException {
+		var header = (Header)le.header;
 		var pageSize = header.pageSize; 
 		
 		// Temporary memory to assemble all pages to one block
@@ -297,8 +328,9 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			// Page map indices are one-based 
 			var index = object.pageTableIndex + i;
 			
-			PageMapEntry entry = new PageMapEntry(le.getReader(), pageMapOffset + (index-1) * 4);
-			var pageOffset  = header.dataPagesOffset + (entry.getIndex()-1)*pageSize;
+			//LxPageMapEntry entry = new LxPageMapEntry(le, pageMapOffset + (index-1) * 4);
+			var entry = le.pageRecords.get(index-1);
+			var pageOffset  = le.lfamz + header.dataPagesOffset + (entry.getOffset()-1) * pageSize;
 			
 			// Read page from file
 			FactoryBundledWithBinaryReader r = le.getReader();
@@ -312,13 +344,15 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			}
 			
 			// Apply fixups to page
-			for (var f : le.fixups.get(index)) {
+			for (var fix : le.fixups.get(index)) {
+				var f = (FixupRecord)fix;
+				
 				// Apply the actual fixup
-				int base = loaderOptions.getBaseAddress(le.getObjects().get(f.objectNumber-1));
+				int base = loaderOptions.getBaseAddress(le.objects.get(f.objectNumber-1));
 				fixupsByType[f.getSourceType()]++;
 				
 				if (loaderOptions.enableType[f.getSourceType()]) {
-					if (f.getSourceType() == LxFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
+					if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
 						int value = base + f.targetOffset;
 						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
 							pageData[f.sourceOffset] = (byte)(value & 0xff);
@@ -333,7 +367,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
 						fixupsHandled++;
-					} else if (f.getSourceType() == LxFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
+					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
 						int value = base + f.targetOffset;
 						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
 							pageData[f.sourceOffset] = (byte)(value & 0xff);
@@ -342,7 +376,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);						
 						}
 						fixupsHandled++;
-					} else if (f.getSourceType() == LxFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
+					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
 						int value = base + f.targetOffset;
 						long address = loaderOptions.getBaseAddress(object) + i*pageSize + f.sourceOffset;
 						value = (int) (value - address - 4);
@@ -359,7 +393,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
 						fixupsHandled++;
-					} else if (f.getSourceType() == LxFixupRecord.SOURCE_1616PTR_FIXUP) {
+					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1616PTR_FIXUP) {
 						var off = f.targetOffset;
 						var selector = loaderOptions.getSelector(f.objectNumber);
 						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
@@ -375,7 +409,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 							pageData[f.sourceOffset+3] = (byte)((selector & 0xff00)>>8);
 						}
 						fixupsHandled++;
-					} else if (f.getSourceType() == LxFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
+					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
 						// 16 bit selector fixup
 						fixupsHandled++;
 					} else {
@@ -423,17 +457,16 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		return block;
 	}
 	
-	private void createEntrypoint(LxExecutable exe, Program program, TaskMonitor monitor) throws UsrException {
+	private void createEntrypoint(Executable exe, Program program, TaskMonitor monitor) throws UsrException {
 		var s = program.getAddressFactory().getDefaultAddressSpace();
 		var header = exe.header;
-		var dosHeader = exe.getDosHeader();
 		
 		// Initialization (entry point, disassemble, ...)
-		if (loaderOptions.addEntry) {
+		if (loaderOptions.addEntry && header.eipObject > 0) {
 			monitor.setMessage(String.format(ARROW + "Setting entrypoint"));
 			var api = new FlatProgramAPI(program, monitor);
 			int eip = header.eip;
-			var eipObject = exe.getObjects().get(header.eipObject-1);
+			var eipObject = exe.objects.get(header.eipObject-1);
 			eip += loaderOptions.getBaseAddress(eipObject);			
 			log(CHECK + "Entrypoint set @ %08x [base %08x + eip %08x]", 
 				eip, 
@@ -446,15 +479,15 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 			program.getSymbolTable().createLabel(api.toAddr(eip), "_entry", SourceType.ANALYSIS);
 			api.createFunction(api.toAddr(eip), "_entry");
 			api.addEntryPoint(api.toAddr(eip));
-			
 		}
-		
 		
 		monitor.setMessage(String.format(ARROW + "Creating fixup xrefs & labels"));
 		monitor.setProgress(0);
 		monitor.setMaximum(exe.totalFixups());
 		for (int i = 1; i <= header.pageCount; i++) {
-			for (var f : exe.fixups.get(i)) {
+			for (var fix : exe.fixups.get(i)) {
+				var f = (FixupRecord)fix;
+				
 				monitor.incrementProgress(1);
 				var addr = s.getAddress(f.getSourceAddress());
 	
@@ -503,7 +536,7 @@ public class LxLoader extends AbstractLibrarySupportLoader {
 		// Create a label for each page
 		if (loaderOptions.createPageLabels) {
 			for (var i = 1; i <= exe.header.pageCount; i++) {
-				var addr = s.getAddress(header.dataPagesOffset - dosHeader.e_lfanew()).add((i-1)*header.pageSize);
+				var addr = s.getAddress(header.dataPagesOffset - exe.lfanew).add((i-1)*header.pageSize);
 				program.getSymbolTable().createLabel(addr, "LE_PAGE_" + i, SourceType.ANALYSIS);
 			}
 		}

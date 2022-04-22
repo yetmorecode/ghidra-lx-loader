@@ -3,22 +3,24 @@ package yetmorecode.ghidra.format.lx.model;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import yetmorecode.file.format.lx.LinearObjectTableEntry;
 
-public class ObjectTableEntry extends yetmorecode.file.format.lx.ObjectTableEntry {
-
-	public int offset;
-	public int padding;
+public class ObjectTableEntry extends LinearObjectTableEntry {
+	public long offset;
 	
-	public ObjectTableEntry(FactoryBundledWithBinaryReader reader, int index) throws IOException {
-		long oldIndex = reader.getPointerIndex();
-		reader.setPointerIndex(index);
+	public ObjectTableEntry(Executable exe, int number) throws IOException {
+		var reader = exe.getBinaryReader();
+		var oldIndex = reader.getPointerIndex();
+		var objectTableOffset = exe.lfanew + exe.header.objectTableOffset;
+		this.offset = objectTableOffset + number * SIZE;
+		this.number = number + 1;
+		reader.setPointerIndex(offset);
 		size = reader.readNextInt();		
 		base = reader.readNextInt();
 		flags = reader.readNextInt();
 		pageTableIndex = reader.readNextInt();
 		pageCount = reader.readNextInt();
-		padding = reader.readNextInt();
+		reserved = reader.readNextInt();
 		reader.setPointerIndex(oldIndex);
 	}
 	

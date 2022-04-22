@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.format.lx;
+package yetmorecode.ghidra.lx;
 
 /**
  * An exception class to handle encountering

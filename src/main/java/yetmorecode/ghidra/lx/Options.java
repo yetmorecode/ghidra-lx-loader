@@ -1,4 +1,4 @@
-package yetmorecode.ghidra.format.lx;
+package yetmorecode.ghidra.lx;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,10 +9,10 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
 import ghidra.program.model.listing.Program;
+import yetmorecode.file.format.lx.LinearObjectTableEntry;
 import yetmorecode.ghidra.format.lx.model.FixupRecord;
-import yetmorecode.ghidra.format.lx.model.ObjectTableEntry;
 
-public class LoaderOptions {
+public class Options {
 	public final static String GROUP_OVERRIDES = "Overrides";
 	public final static String GROUP_FIXUPS = "Fixups";
 	public final static String GROUP_MEMORY_MAPPING = "Memory";
@@ -52,7 +52,7 @@ public class LoaderOptions {
 	public int[] baseAddresses;
 	public int[] selectors;
 	
-	public LoaderOptions() {
+	public Options() {
 		var prefs = Preferences.userRoot().node(this.getClass().getName());
 		enableType[0] = prefs.getBoolean(OPTION_FIXUP_ENABLE_0, true);
 		enableType[2] = prefs.getBoolean(OPTION_FIXUP_ENABLE_2, true);
@@ -76,11 +76,17 @@ public class LoaderOptions {
 		return enableType[r.getSourceType()];
 	}
 	
-	public int getBaseAddress(ObjectTableEntry object) {
-		var base = getBaseAddress(object.number);
-		if (base > 0) {
-			return base;
+	public int getBaseAddress(LinearObjectTableEntry object) {
+		var customBase = getBaseAddress(object.number);
+		// base address overriden in options?
+		if (customBase > 0) {
+			return customBase;
 		}
+		// no base address? -> map along based on object numbers
+		if (object.base == 0) {
+			return object.number * 0x100000;
+		}
+		// original object base
 		return object.base;
 	}
 	
@@ -94,7 +100,7 @@ public class LoaderOptions {
 		return 0;
 	}
 	
-	public int getSelector(ObjectTableEntry object) {
+	public int getSelector(LinearObjectTableEntry object) {
 		return getSelector(object.number);
 	}
 	

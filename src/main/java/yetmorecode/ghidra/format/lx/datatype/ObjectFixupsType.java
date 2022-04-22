@@ -2,7 +2,6 @@ package yetmorecode.ghidra.format.lx.datatype;
 
 import java.io.IOException;
 
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.Category;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.StructureDataType;
@@ -12,13 +11,14 @@ import ghidra.program.model.symbol.MemReferenceImpl;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.UsrException;
-import yetmorecode.ghidra.format.lx.LoaderOptions;
-import yetmorecode.ghidra.format.lx.model.LxExecutable;
-import yetmorecode.ghidra.format.lx.model.ObjectTableEntry;
+import yetmorecode.file.format.lx.LinearObjectTableEntry;
+import yetmorecode.ghidra.format.lx.model.Executable;
+import yetmorecode.ghidra.format.lx.model.FixupRecord;
+import yetmorecode.ghidra.lx.Options;
 
 public class ObjectFixupsType extends StructureDataType {
 
-	public ObjectFixupsType(LxExecutable executable, ObjectTableEntry object, LoaderOptions options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
+	public ObjectFixupsType(Executable executable, LinearObjectTableEntry object, Options options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
 		super(String.format("%08x_%d", options.getBaseAddress(object), object.number), 0);
 		setCategoryPath(cat.getCategoryPath());
 		
@@ -41,7 +41,8 @@ public class ObjectFixupsType extends StructureDataType {
 				
 				// Each single fixup
 				var current = 0;
-				for (var f : executable.fixups.get(page)) {
+				for (var fix : executable.fixups.get(page)) {
+					var f = (FixupRecord)fix;
 					// Add datatype
 					var fixupData = f.toDataType();
 					
@@ -55,7 +56,7 @@ public class ObjectFixupsType extends StructureDataType {
 					sub.add(fixupData, "fix_" + f.index, "Fixup record #" + f.index);
 					
 					// Add xref
-					var to = b.getStart().add(executable.header.dataPagesOffset - executable.getDosHeader().e_lfanew() + (page-1)*pageSize + current);
+					var to = b.getStart().add(executable.header.dataPagesOffset - executable.lfanew + (page-1)*pageSize + current);
 					var space = program.getAddressFactory().getDefaultAddressSpace();
 					var ref = new MemReferenceImpl(
 						space.getAddress(f.getSourceAddress()), 
@@ -72,5 +73,4 @@ public class ObjectFixupsType extends StructureDataType {
 			}
 		}
 	}
-
 }

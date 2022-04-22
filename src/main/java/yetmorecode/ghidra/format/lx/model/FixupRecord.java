@@ -10,11 +10,11 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
-import yetmorecode.file.format.lx.LxFixupRecord;
+import yetmorecode.file.format.lx.LinearFixupRecord;
 import yetmorecode.ghidra.format.lx.datatype.FixupSourceType;
 import yetmorecode.ghidra.format.lx.datatype.FixupTargetFlags;
 
-public class FixupRecord extends LxFixupRecord implements StructConverter {
+public class FixupRecord extends LinearFixupRecord implements StructConverter {
 
 	public int sourceCount = 1;
 	public int index;
@@ -35,9 +35,9 @@ public class FixupRecord extends LxFixupRecord implements StructConverter {
 	
 	private StructureDataType dt;
 	
-	public FixupRecord(FactoryBundledWithBinaryReader reader, int offset, int number, int baseAddress, int page) throws IOException {
+	public FixupRecord(FactoryBundledWithBinaryReader reader, long l, int number, int baseAddress, int page) throws IOException {
 		var oldIndex = reader.getPointerIndex();
-		reader.setPointerIndex(offset);
+		reader.setPointerIndex(l);
 		index = number;
 		this.pageAddress = baseAddress + page * 0x1000;
 		
@@ -98,13 +98,82 @@ public class FixupRecord extends LxFixupRecord implements StructConverter {
 					targetOffset += 0x10000;
 				}
 			}
+		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_ORDINAL) {
+			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
+				ordinalIndex = reader.readNextShort();
+				size += 2;
+			} else {
+				ordinalIndex = reader.readNextByte();
+				size++;
+			}
+			if ((targetFlags & TARGET_8BIT_ORDINAL) > 0) {
+				ordinalNumber = reader.readNextByte();
+				size++;
+			}  else if ((targetFlags & TARGET_32BIT_OFFSET) > 0) {
+				ordinalNumber = reader.readNextInt();
+				size += 4;
+			} else {
+				ordinalNumber = reader.readNextShort();
+				size += 2;
+			}
+			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
+				if ((targetFlags & TARGET_32BIT_ADDITIVE) > 0) {
+					additive = reader.readNextInt();
+					size += 4;
+				} else {
+					additive = reader.readNextShort();
+					size += 2;
+				}
+			}
+		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_NAME) {
+			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
+				ordinalIndex = reader.readNextShort();
+				size += 2;
+			} else {
+				ordinalIndex = reader.readNextByte();
+				size++;
+			}
+			if ((targetFlags & TARGET_32BIT_OFFSET) > 0) {
+				ordinalNumber = reader.readNextInt();
+				size += 4;
+			} else {
+				ordinalNumber = reader.readNextShort();
+				size += 2;
+			}
+			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
+				if ((targetFlags & TARGET_32BIT_ADDITIVE) > 0) {
+					additive = reader.readNextInt();
+					size += 4;
+				} else {
+					additive = reader.readNextShort();
+					size += 2;
+				}
+			}
+		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_ENTRY) {
+			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
+				ordinalIndex = reader.readNextShort();
+				size += 2;
+			} else {
+				ordinalIndex = reader.readNextByte();
+				size++;
+			}
+			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
+				if ((targetFlags & TARGET_32BIT_ADDITIVE) > 0) {
+					additive = reader.readNextInt();
+					size += 4;
+				} else {
+					additive = reader.readNextShort();
+					size += 2;
+				}
+			}
 		} else {
-			Msg.warn(this, String.format("External fixup. Unhandled.."));
+			Msg.warn(this, String.format("Invalid fixup. Unhandled.."));
 		}
 		
 		if (hasSourceList()) {
 			for (int i = 0; i < sourceCount; i++) {
 				sourceList.add(reader.readNextShort());
+				size += 2;
 			}
 			dt.add(new ArrayDataType(WORD, sourceCount, 0), "source_list", "");
 		}
@@ -114,30 +183,6 @@ public class FixupRecord extends LxFixupRecord implements StructConverter {
 	
 	public int getSourceAddress() {
 		return pageAddress + sourceOffset;
-	}
-	
-	public boolean hasSourceList() {
-		return (sourceType & SOURCE_SOURCE_LIST) > 0;
-	}
-	
-	public boolean objectNumber16Bit() {
-		return (targetFlags & 0x40) > 0;
-	}
-	
-	public boolean isInternalTarget() {
-		return (targetFlags & 0x3) == 0;
-	}
-	
-	public int getSourceType() {
-		return sourceType & SOURCE_MASK;
-	}
-	
-	public boolean isTargetOffset32Bit() {
-		return (targetFlags & 0x10) > 0;
-	}
-	
-	public boolean is1616PointerFixup() {
-		return getSourceType() == SOURCE_1616PTR_FIXUP;
 	}
 
 	@Override

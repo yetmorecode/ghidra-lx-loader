@@ -9,12 +9,12 @@ import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.exception.UsrException;
-import yetmorecode.ghidra.format.lx.LoaderOptions;
-import yetmorecode.ghidra.format.lx.model.LxExecutable;
+import yetmorecode.ghidra.format.lx.model.Executable;
+import yetmorecode.ghidra.lx.Options;
 
 public class FixupSectionType extends StructureDataType {
 
-	public FixupSectionType(LxExecutable executable, int end, LoaderOptions options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
+	public FixupSectionType(Executable executable, int end, Options options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
 		super("IMAGE_LE_FIXUP", 0);
 		
 		var h = executable.header;
@@ -27,7 +27,7 @@ public class FixupSectionType extends StructureDataType {
 		
 		
 		
-		for (var object : executable.getObjects()) {
+		for (var object : executable.objects) {
 			if (executable.objectHasFixups(object)) {
 				add(
 					new ObjectFixupsType(executable, object, options, cat, program, b), 
@@ -41,7 +41,7 @@ public class FixupSectionType extends StructureDataType {
 			add(new ArrayDataType(StructConverter.BYTE, h.importProcedureNameTableOffset - h.importModuleNameTableOffset, 0), "import_module_name", "TODO");
 		}
 		if (h.dataPagesOffset > h.importProcedureNameTableOffset) {
-			add(new ArrayDataType(StructConverter.BYTE, (h.dataPagesOffset - executable.getDosHeader().e_lfanew()) - h.importProcedureNameTableOffset, 0), "import_procedure_table", "TODO");
+			add(new ArrayDataType(StructConverter.BYTE, (int) ((h.dataPagesOffset - executable.lfanew) - h.importProcedureNameTableOffset), 0), "import_procedure_table", "TODO");
 		}
 	}
 }

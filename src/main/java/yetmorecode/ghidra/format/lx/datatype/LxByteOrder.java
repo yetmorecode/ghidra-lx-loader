@@ -4,8 +4,8 @@ import ghidra.program.model.data.EnumDataType;
 
 public class LxByteOrder extends EnumDataType {
 	public LxByteOrder() {
-		super("byte_order", 1);
-		add("LE", 0);
-		add("BE", 1);
+		super("order", 1);
+		add("little", 0);
+		add("big", 1);
 	}
 }
