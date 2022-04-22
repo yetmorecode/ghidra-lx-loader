@@ -25,7 +25,17 @@ Optionally, various options can be specified individually for each file:
 * Create labels for each fixup in memory
 * Create labels for each page beginning in memory
 * Log fixup statistics / Log individual fixup types
-  
+
+## Tested with
+
+* F1 Manager Professional (F1.exe - DOS/4GW LE): https://www.mobygames.com/game/dos/f1-manager-professional
+* The Elder Scrolls Redguard (RGFX.exe - DOS/4GW LE): https://en.wikipedia.org/wiki/The_Elder_Scrolls_Adventures:_Redguard
+* X-Com: Apocalypse (UFO2P.EXE - DOS/16 LE and unbound LE-style)
+* Various files compiled with Open Watcom (DOS32A LE)
+* Random VxD files
+
+## Extra
+
 ![Options](data/options.png)
 
 ![Options](data/imagedata.png)
@@ -49,10 +59,6 @@ The loader will adjust the locations (and fixups!) accordingly:
 * https://github.com/yetmorecode/dos32a/blob/master/src/dos32a/loader.asm
 * https://github.com/open-watcom/open-watcom-v2/blob/master/bld/watcom/h/exeflat.h
 
-## Tested with
-
-* F1 Manager Professional (F1.exe): https://www.mobygames.com/game/dos/f1-manager-professional
-* The Elder Scrolls Redguard (RGFX.exe): https://en.wikipedia.org/wiki/The_Elder_Scrolls_Adventures:_Redguard
 
 ## Feedback
 
