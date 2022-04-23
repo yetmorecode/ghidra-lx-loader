@@ -11,6 +11,7 @@ import ghidra.program.model.symbol.MemReferenceImpl;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.UsrException;
+import ghidra.util.task.TaskMonitor;
 import yetmorecode.file.format.lx.LinearObjectTableEntry;
 import yetmorecode.ghidra.format.lx.model.Executable;
 import yetmorecode.ghidra.format.lx.model.FixupRecord;
@@ -18,7 +19,7 @@ import yetmorecode.ghidra.lx.Options;
 
 public class ObjectFixupsType extends StructureDataType {
 
-	public ObjectFixupsType(Executable executable, LinearObjectTableEntry object, Options options, Category cat, Program program, MemoryBlock b) throws UsrException, IOException {
+	public ObjectFixupsType(Executable executable, LinearObjectTableEntry object, Options options, Category cat, Program program, MemoryBlock b, TaskMonitor monitor) throws UsrException, IOException {
 		super(String.format("%08x_%d", options.getBaseAddress(object), object.number), 0);
 		setCategoryPath(cat.getCategoryPath());
 		
@@ -69,6 +70,8 @@ public class ObjectFixupsType extends StructureDataType {
 					program.getReferenceManager().addReference(ref);
 					
 					current += fixupData.getLength();
+					monitor.incrementProgress(1);
+					monitor.setMessage(String.format("Mapping fixups %d of %d", monitor.getProgress(), monitor.getMaximum()));
 				}	
 			}
 		}

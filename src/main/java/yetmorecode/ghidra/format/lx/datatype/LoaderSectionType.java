@@ -26,8 +26,10 @@ public class LoaderSectionType extends StructureDataType {
 		}
 			
 		var h = executable.header;
-		if (h.residentNameTableOffset - h.resourceTableOffset > 0) {
-			add(new ArrayDataType(StructConverter.BYTE, h.residentNameTableOffset - h.resourceTableOffset, 0), "resources", "todo");	
+		if (h.resourceTableOffset > 0 && h.resourceCount > 0) {
+			if (h.residentNameTableOffset - h.resourceTableOffset > 0) {
+				add(new ArrayDataType(StructConverter.BYTE, h.residentNameTableOffset - h.resourceTableOffset, 0), "resources", "todo");	
+			}	
 		}
 		if (h.entryTableOffset - h.residentNameTableOffset > 0) {
 			add(new ArrayDataType(StructConverter.BYTE, h.entryTableOffset - h.residentNameTableOffset, 0), "name_table", "todo");

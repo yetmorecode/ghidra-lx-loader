@@ -260,19 +260,24 @@ public class Header extends yetmorecode.file.format.lx.LinearHeader implements S
 			DWORD, 4, "e32_stacksize", 
 			"Stack size"
 		);
+		res3 = reader.readNextByteArray(8);
 		dt.add(new ArrayDataType(BYTE, 8, 0), "e32_res3", "reserved");
+		winresoff = reader.readNextInt();
 		dt.add(
 			DWORD, 4, "e32_winresoff  ", 
 			""
 		);
+		winreslen = reader.readNextInt();
 		dt.add(
 			DWORD, 4, "e32_winreslen ", 
 			""
 		);
+		Dev386_Device_ID = reader.readNextShort();
 		dt.add(
 			WORD, 2, "Dev386_Device_ID", 
 			""
 		);
+		Dev386_DDK_Version = reader.readNextShort();
 		dt.add(
 			WORD, 2, "Dev386_DDK_Version", 
 			""

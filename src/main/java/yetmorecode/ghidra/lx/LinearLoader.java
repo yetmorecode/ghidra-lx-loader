@@ -28,7 +28,6 @@ import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.MemReferenceImpl;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
@@ -109,7 +108,8 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		
 		// Try parsing the executable
 		int id = program.startTransaction(ARROW + "Loading..");
-		monitor.setMessage(String.format(ARROW + "Processing %s", getName()));
+		monitor.setIndeterminate(true);
+		monitor.setMessage(String.format(ARROW + "Loading %s", getName()));
 		ContinuesFactory factory = MessageLogContinuesFactory.create(messageLog);
 		try {
 			// Parse EXE from file
@@ -140,138 +140,114 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	 * - loader section (mostly fixup/relocation data)
 	 * - data pages section
 	 */
-	private void createImageMappings(Executable executable, Program program, ByteProvider provider, TaskMonitor monitor) throws CancelledException, IOException, AddressOverflowException, UsrException {
-		var header = (Header)executable.header;
-		var dosHeader = executable.mz;
+	private void createImageMappings(Executable e, Program program, ByteProvider provider, TaskMonitor monitor) throws CancelledException, IOException, AddressOverflowException, UsrException {
+		var header = (Header)e.header;
+		var dosHeader = e.mz;
 		var fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
-		Address addr;
-		MemoryBlock b;		
+		Address addr;		
 		monitor.setMessage(String.format(ARROW + "Mapping Image data", header.getTypePrefix().toUpperCase()));
 
-		if (executable.mz.isDosSignature()) {
+		// Map the whole image for inspection
+		var b = MemoryBlockUtils.createInitializedBlock(
+			program, 
+			true, 
+			".image", AddressSpace.OTHER_SPACE.getAddress(0), 
+			fileBytes, 0, fileBytes.getSize(), 
+			"Raw EXE image data", 
+			null, 
+			false, false, false, 
+			null
+		);
+		
+		if (e.mz.isDosSignature()) {
 			// MZ image
-			addr = AddressSpace.OTHER_SPACE.getAddress(0);
-			b = MemoryBlockUtils.createInitializedBlock(
-				program, 
-				true, 
-				".mz", addr, 
-				fileBytes, 0, executable.mz.toDataType().getLength(), 
-				"Old MZ-style image (headers + stub)", 
-				null, 
-				true, false, false, 
-				null
-			);
-			createData(program, b.getStart(), dosHeader.toDataType());
-			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
-			log(CHECK + "Mapped MZ Header");			
+			addr = b.getStart();
+			createData(program, addr, dosHeader.toDataType());
+			program.getSymbolTable().createLabel(b.getStart(), String.format("IMG_%08X_MZ_HEADER", 0), SourceType.USER_DEFINED);
+			log(CHECK + "MZ Header");			
 		}
-		int count = 1;
-		for (var s : executable.dos16Headers.entrySet()) {
+		for (var s : e.dos16Headers.entrySet()) {
 			// BW DOS/16 image
-			addr = AddressSpace.OTHER_SPACE.getAddress(s.getKey());
-			b = MemoryBlockUtils.createInitializedBlock(
-				program, 
-				true, 
-				".bw" + count++, addr, 
-				fileBytes, s.getKey(), s.getValue().toDataType().getLength(), 
-				"BW DOS/16 Image", 
-				null, 
-				true, false, false, 
-				null
-			);
-			createData(program, b.getStart(), s.getValue().toDataType());
-			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_DOS16_HEADER", SourceType.ANALYSIS);
-			log(CHECK + "Mapped BW DOS/16 Header");
+			addr = b.getStart().add(s.getKey());
+			createData(program, addr, s.getValue().toDataType());
+			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_DOS16_HEADER", s.getKey()), SourceType.USER_DEFINED);
+			log(CHECK + "BW DOS/16 Header");
 		}
-		if (executable.mzSecondary != null) {
+		
+		if (e.mzSecondary != null) {
 			// MZ image
-			addr = AddressSpace.OTHER_SPACE.getAddress(executable.lfamz);
-			b = MemoryBlockUtils.createInitializedBlock(
-				program, 
-				true, 
-				".mz2", addr, 
-				fileBytes, executable.lfamz, executable.mzSecondary.toDataType().getLength(), 
-				"Old MZ-style image (headers + stub)", 
-				null, 
-				true, false, false, 
-				null
-			);
-			createData(program, b.getStart(), executable.mzSecondary.toDataType());
-			program.getSymbolTable().createLabel(b.getStart(), "IMAGE_MZ_HEADER", SourceType.ANALYSIS);
-			log(CHECK + "Mapped MZ Header");			
+			addr = b.getStart().add(e.lfamz);
+			createData(program, addr, e.mzSecondary.toDataType());
+			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_MZ_HEADER", e.lfamz), SourceType.USER_DEFINED);
+			log(CHECK + "MZ Header");			
 		}
 
 		// LE header
-		addr = AddressSpace.OTHER_SPACE.getAddress(executable.lfanew);
-		long size = 0;
-		if (loaderOptions.mapExtra) {
-			size = ((executable.lfamz + header.dataPagesOffset) - executable.lfanew);
-			size += (header.pageCount-1) * header.pageSize + header.lastPageSize;
-		} else {
-			size = 196;
-		}
+		addr = b.getStart().add(e.lfanew);
+		createData(program, addr, header.toDataType());
+		program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_HEADER", e.lfanew), SourceType.USER_DEFINED);
+		log(CHECK + "LX Header");
 		
-		b = MemoryBlockUtils.createInitializedBlock(
-			program, 
-			true, 
-			String.format(".%s", header.getTypePrefix()), addr, 
-			fileBytes, executable.lfanew, size, 
-			"Linear Executable Information", 
-			null, 
-			true, false, false, 
-			null
-		);
-		createData(program, b.getStart(), header.toDataType());
-		program.getSymbolTable().createLabel(b.getStart(), "IMAGE_LE_HEADER", SourceType.ANALYSIS);
-		log(CHECK + "Mapped LX Header Section");
-
 		if (loaderOptions.mapExtra) {
 			// LE loader section
-			addr = b.getStart().add(header.objectTableOffset);
+			addr = b.getStart().add(e.lfanew + header.objectTableOffset);
 			monitor.setMessage(String.format(ARROW + "Mapping LX Loader section"));
 			createData(
 				program, 
 				addr,
-				new LoaderSectionType(executable, header.fixupPageTableOffset - header.objectTableOffset)
+				new LoaderSectionType(e, header.fixupPageTableOffset - header.objectTableOffset)
 			);
-			program.getSymbolTable().createLabel(addr, "IMAGE_LE_LOADER", SourceType.ANALYSIS);
-			log(CHECK + "Mapped LX Loader Section");
+			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_LOADER", e.lfanew + header.objectTableOffset), SourceType.USER_DEFINED);
+			log(CHECK + "LX Loader Section");
 		
 			// LE fixup section
 			var dm = program.getDataTypeManager();
 			var cat = dm.createCategory(new CategoryPath("/_le/_fixup"));
-			addr = b.getStart().add(header.fixupPageTableOffset);
-			monitor.setMessage(String.format(ARROW + "Mapping LX Fixup Section (%d fixups total)", executable.fixupCount));
+			addr = b.getStart().add(e.lfanew + header.fixupPageTableOffset);
+			monitor.setMessage(String.format(ARROW + "Mapping Fixups (%d total)", e.fixupCount));
+			monitor.setIndeterminate(true);
+			monitor.setMaximum(e.fixupCount);
+			monitor.setProgress(0);
 			var ft = new FixupSectionType(
-				executable, 
-				(int) (header.dataPagesOffset - executable.lfanew - header.fixupPageTableOffset),
+				e, 
+				(int) (e.lfamz + header.dataPagesOffset - e.lfanew - header.fixupPageTableOffset),
 				loaderOptions,
 				cat,
 				program,
-				b
+				b,
+				monitor
 			);
 			createData(program, addr, ft);
-			program.getSymbolTable().createLabel(addr, "IMAGE_LE_FIXUP", SourceType.ANALYSIS);
-			log(CHECK + "Mapped LX Fixup Section");
+			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_FIXUP", e.lfanew + header.fixupPageTableOffset), SourceType.USER_DEFINED);
+			log(CHECK + "LX Fixups");
 		
 			// LE Data Section
-			addr = b.getStart().add(header.dataPagesOffset - executable.lfanew);
-			monitor.setMessage(String.format(ARROW + "Mapping data pages (%d total)", executable.header.pageCount));
-			var all = new StructureDataType("IMAGE_LE_DATA", 0);
+			addr = b.getStart().add(e.lfamz + header.dataPagesOffset);
+			monitor.setMessage(String.format(ARROW + "Mapping data pages (%d total)", e.header.pageCount));
+			var all = new StructureDataType("IMG_LE_DATA", 0);
 			
 			// Full size pages
-			for (var i = 0; i < executable.header.pageCount-1; i++) {
+			for (var i = 0; i < e.header.pageCount-1; i++) {
 				var dt = new ArrayDataType(StructConverter.BYTE, header.pageSize, 0); 
-				addr = b.getStart().add(header.dataPagesOffset + i * header.pageSize - executable.lfanew);
+				addr = b.getStart().add(e.lfamz + header.dataPagesOffset + i * header.pageSize);
 				all.add(dt, "page_" + (i+1), "");
 			}
 			// Last page
 			var dt = new ArrayDataType(StructConverter.BYTE, header.lastPageSize, 0);
 			all.add(dt, "page_" + header.pageCount, "");
 			
-			addr = b.getStart().add(header.dataPagesOffset - executable.lfanew);
+			addr = b.getStart().add(e.lfamz + header.dataPagesOffset);
 			createData(program, addr, all);
-			log(CHECK + "Mapped LX Data Section");
+			log(CHECK + "LX Data Pages");
+			
+			if (e.vxd != null) {
+				// VxD Version Resource
+				addr = b.getStart().add(e.lfamz + header.winresoff);
+				createData(program, addr, e.vxd.toDataType());
+				
+				program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_VXD_VERSION", e.lfamz + header.winresoff), SourceType.USER_DEFINED);
+				log(CHECK + "VxD Windows VERSIONINFO");
+			}
 		}
 	}
 	
@@ -409,14 +385,43 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 							pageData[f.sourceOffset+3] = (byte)((selector & 0xff00)>>8);
 						}
 						fixupsHandled++;
+					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1632PTR_FIXUP) {
+						var off = f.targetOffset;
+						var selector = loaderOptions.getSelector(f.objectNumber);
+						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+							pageData[f.sourceOffset] = (byte)(off & 0xff);
+						}
+						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);						
+						}
+						if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+							pageData[f.sourceOffset+2] = (byte)((off & 0xff0000)>>16);						
+						}
+						if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+							pageData[f.sourceOffset+3] = (byte)((off & 0xff000000)>>24);						
+						}
+						if (f.sourceOffset+4 >= 0 && f.sourceOffset+4 < pageData.length) {
+							pageData[f.sourceOffset+4] = (byte)(selector & 0xff);
+						}
+						if (f.sourceOffset+5 >= 0 && f.sourceOffset+5 < pageData.length) {
+							pageData[f.sourceOffset+5] = (byte)((selector & 0xff00)>>8);
+						}
+						fixupsHandled++;
 					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
-						// 16 bit selector fixup
+						var selector = loaderOptions.getSelector(f.objectNumber);
+						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+							pageData[f.sourceOffset] = (byte)(selector & 0xff);
+						}
+						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+							pageData[f.sourceOffset+1] = (byte)((selector & 0xff00)>>8);
+						}						
 						fixupsHandled++;
 					} else {
 						Msg.warn(this, String.format(
-							"WARNING: unhandled fixup #%x_%s at %08x (type %02x): %s -> object#%x:%x",
-							f.index, f.shortname(),  f.getSourceAddress(),
-							index,
+							"WARNING: unhandled fixup %s (#%d) at %08x (type %02x): %s -> object#%x:%x",
+							f.shortname(), f.index,
+							f.getSourceAddress(),
+							f.getSourceType(),
 							f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", f.sourceOffset),
 							f.objectNumber, f.targetOffset
 						));
@@ -476,12 +481,13 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			if (loaderOptions.disassembleEntry) {
 				api.disassemble(api.toAddr(eip));	
 			}
-			program.getSymbolTable().createLabel(api.toAddr(eip), "_entry", SourceType.ANALYSIS);
+			program.getSymbolTable().createLabel(api.toAddr(eip), "_entry", SourceType.USER_DEFINED);
 			api.createFunction(api.toAddr(eip), "_entry");
 			api.addEntryPoint(api.toAddr(eip));
 		}
 		
 		monitor.setMessage(String.format(ARROW + "Creating fixup xrefs & labels"));
+		monitor.setIndeterminate(true);
 		monitor.setProgress(0);
 		monitor.setMaximum(exe.totalFixups());
 		for (int i = 1; i <= header.pageCount; i++) {
@@ -516,7 +522,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 					// so we remove the old ref and place on calculated by ourself
 					var to = s.getAddress(loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset);
 					program.getReferenceManager().removeAllReferencesFrom(addr);
-					var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.ANALYSIS, 0, true);
+					var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.USER_DEFINED, 0, true);
 					program.getReferenceManager().addReference(ref);	
 				}
 				
@@ -537,7 +543,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		if (loaderOptions.createPageLabels) {
 			for (var i = 1; i <= exe.header.pageCount; i++) {
 				var addr = s.getAddress(header.dataPagesOffset - exe.lfanew).add((i-1)*header.pageSize);
-				program.getSymbolTable().createLabel(addr, "LE_PAGE_" + i, SourceType.ANALYSIS);
+				program.getSymbolTable().createLabel(addr, "LE_PAGE_" + i, SourceType.USER_DEFINED);
 			}
 		}
 	}

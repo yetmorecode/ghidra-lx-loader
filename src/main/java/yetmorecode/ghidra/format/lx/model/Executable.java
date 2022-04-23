@@ -25,6 +25,9 @@ public class Executable extends LinearExecutable {
     public HashMap<Long, Dos16Header> dos16Headers =  new HashMap<Long, Dos16Header>();
     public DOSHeader mzSecondary;
     
+    // VxD version resource (i.e. e32_winresoff)
+    public VxDVersionResource vxd;
+    
     // When there is no MZ header (i.e. unbound LE-Style executables), the new file header starts at 0
     public long lfanew = 0;
     public long lfamz = 0;
@@ -61,6 +64,9 @@ public class Executable extends LinearExecutable {
     	
     	// LX header
     	header = new Header(reader, lfanew);
+    	if (header.winresoff > 0 && header.winreslen > 0) {
+    		vxd = new VxDVersionResource(reader, lfamz + header.winresoff);
+    	}
     	
     	// Object record table
     	for (int object = 0; object < header.objectCount; object++) {
