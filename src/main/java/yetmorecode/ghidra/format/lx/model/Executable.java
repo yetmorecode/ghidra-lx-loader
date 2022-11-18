@@ -4,9 +4,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import generic.continues.GenericFactory;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import yetmorecode.file.format.lx.LinearExecutable;
 import yetmorecode.file.format.lx.LinearObjectTableEntry;
 import yetmorecode.ghidra.lx.InvalidHeaderException;
@@ -14,7 +13,7 @@ import yetmorecode.ghidra.lx.Options;
 
 
 public class Executable extends LinearExecutable {
-    private FactoryBundledWithBinaryReader reader;
+    private BinaryReader reader;
     
     public boolean isUnbound = false;
     
@@ -32,8 +31,8 @@ public class Executable extends LinearExecutable {
     public long lfanew = 0;
     public long lfamz = 0;
     
-	public Executable(GenericFactory factory, ByteProvider bp, Options options) throws IOException, InvalidHeaderException {
-    	reader = new FactoryBundledWithBinaryReader(factory, bp, true);
+	public Executable(ByteProvider bp, Options options) throws IOException, InvalidHeaderException {
+    	reader = new BinaryReader(bp, true);
     	try {
 	    	// Try reading MZ header
 	        mz = DOSHeader.createDOSHeader(reader);
@@ -120,11 +119,11 @@ public class Executable extends LinearExecutable {
      * Returns the underlying binary reader.
      * @return the underlying binary reader
      */
-    public FactoryBundledWithBinaryReader getBinaryReader() {
+    public BinaryReader getBinaryReader() {
         return reader;
     }
 
-    public FactoryBundledWithBinaryReader getReader() {
+    public BinaryReader getReader() {
 		return reader;
 	}
 

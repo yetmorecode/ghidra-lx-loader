@@ -2,8 +2,8 @@ package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -15,9 +15,9 @@ public class VxDDescriptionBlock extends DescriptionBlock implements StructConve
 	
 	private StructureDataType dt = new StructureDataType(DATATYPE_NAME, 0);
 	
-	private FactoryBundledWithBinaryReader reader;
+	private BinaryReader reader;
 	
-	public VxDDescriptionBlock(FactoryBundledWithBinaryReader reader, long index) throws IOException {
+	public VxDDescriptionBlock(BinaryReader reader, long index) throws IOException {
 		this.reader = reader;
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);

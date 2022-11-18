@@ -2,8 +2,8 @@ package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -16,7 +16,7 @@ public class Dos16Header extends BwHeader implements StructConverter {
 	
 	private StructureDataType dt = new StructureDataType(DATATYPE_NAME, 0);
 	
-	public Dos16Header(FactoryBundledWithBinaryReader reader, long index) throws IOException, InvalidHeaderException {
+	public Dos16Header(BinaryReader reader, long index) throws IOException, InvalidHeaderException {
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);
 

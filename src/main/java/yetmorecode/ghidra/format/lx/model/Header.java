@@ -2,8 +2,8 @@ package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -22,7 +22,7 @@ public class Header extends yetmorecode.file.format.lx.LinearHeader implements S
 	
 	public int unknown;
 	
-	public Header(FactoryBundledWithBinaryReader reader, long index) throws IOException, InvalidHeaderException {
+	public Header(BinaryReader reader, long index) throws IOException, InvalidHeaderException {
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);
 

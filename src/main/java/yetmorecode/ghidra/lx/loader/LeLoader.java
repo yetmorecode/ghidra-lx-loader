@@ -1,7 +1,7 @@
 package yetmorecode.ghidra.lx.loader;
 
 import java.io.IOException;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import yetmorecode.file.format.lx.LinearHeader;
@@ -32,7 +32,7 @@ public class LeLoader extends LinearLoader {
 	}
 
 	@Override
-	public void checkFormat(FactoryBundledWithBinaryReader reader) throws IOException, InvalidHeaderException {
+	public void checkFormat(BinaryReader reader) throws IOException, InvalidHeaderException {
     	// Try parsing MZ header
 		reader.setPointerIndex(0);
         var mzHeader = DOSHeader.createDOSHeader(reader);

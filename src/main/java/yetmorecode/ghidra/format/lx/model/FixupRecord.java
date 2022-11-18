@@ -3,8 +3,8 @@ package yetmorecode.ghidra.format.lx.model;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -35,7 +35,7 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 	
 	private StructureDataType dt;
 	
-	public FixupRecord(FactoryBundledWithBinaryReader reader, long l, int number, int baseAddress, int page) throws IOException {
+	public FixupRecord(BinaryReader reader, long l, int number, int baseAddress, int page) throws IOException {
 		var oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(l);
 		index = number;
