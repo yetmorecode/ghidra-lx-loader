@@ -2,8 +2,8 @@ package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -22,7 +22,7 @@ public class Header extends yetmorecode.file.format.lx.LinearHeader implements S
 	
 	public int unknown;
 	
-	public Header(FactoryBundledWithBinaryReader reader, long index) throws IOException, InvalidHeaderException {
+	public Header(BinaryReader reader, long index) throws IOException, InvalidHeaderException {
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);
 
@@ -68,7 +68,7 @@ public class Header extends yetmorecode.file.format.lx.LinearHeader implements S
 		pageCount = reader.readNextInt();
 		dt.add(
 			DWORD, 4, "e32_mpages", 
-			"# of physical pages in module. This field specifies the number of pages physically contained in this module. In other words, pages containing either enumerated or iterated data, not invalid or zero-fillpages. These pages are contained in the ‘preload pages’, ‘demand load pages’ and ‘iterated data pages’ sections of the linear EXE module."
+			"# of physical pages in module. This field specifies the number of pages physically contained in this module. In other words, pages containing either enumerated or iterated data, not invalid or zero-fillpages. These pages are contained in the â€˜preload pagesâ€™, â€˜demand load pagesâ€™ and â€˜iterated data pagesâ€™ sections of the linear EXE module."
 		);	
 		eipObject = reader.readNextInt();
 		dt.add(

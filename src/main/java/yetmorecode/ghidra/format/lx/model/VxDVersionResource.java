@@ -2,8 +2,8 @@ package yetmorecode.ghidra.format.lx.model;
 
 import java.io.IOException;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -18,9 +18,9 @@ public class VxDVersionResource extends VersionResource implements StructConvert
 	private StructureDataType vartype = new StructureDataType("VarFileInfo", 0);
 	private StructureDataType versiontype = new StructureDataType("VS_VERSIONINFO", 0);
 	private StructureDataType infotype = new StructureDataType("VS_FIXEDFILEINFO", 0);
-	private FactoryBundledWithBinaryReader reader;
+	private BinaryReader reader;
 	
-	public VxDVersionResource(FactoryBundledWithBinaryReader reader, long index) throws IOException {
+	public VxDVersionResource(BinaryReader reader, long index) throws IOException {
 		this.reader = reader;
 		long oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(index);

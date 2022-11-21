@@ -3,8 +3,8 @@ package yetmorecode.ghidra.format.lx.model;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.bin.format.Writeable;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
@@ -41,25 +41,25 @@ public class DOSHeader implements StructConverter, Writeable   {
 
 	private byte [] stubBytes;
 
-    private FactoryBundledWithBinaryReader reader;
+    private BinaryReader reader;
 
     /**
      * Constructs a new DOS header.
      * @param reader the binary reader
      */
     public static DOSHeader createDOSHeader(
-            FactoryBundledWithBinaryReader reader) throws IOException {
-        DOSHeader dosHeader = (DOSHeader) reader.getFactory().create(DOSHeader.class);
+            BinaryReader reader) throws IOException {
+        DOSHeader dosHeader = new DOSHeader();
         dosHeader.initDOSHeader(reader);
         return dosHeader;
     }
 
     /**
-     * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
+     * DO NOT USE THIS CONSTRUCTOR, USE create*(BinaryReader ...) FACTORY METHODS INSTEAD.
      */
     public DOSHeader() {}
 
-    private void initDOSHeader(FactoryBundledWithBinaryReader reader1) throws IOException {
+    private void initDOSHeader(BinaryReader reader1) throws IOException {
         this.reader = reader1;
 
         parse();

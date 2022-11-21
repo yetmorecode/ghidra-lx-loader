@@ -4,15 +4,12 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.*;
 
-import generic.continues.ContinuesFactory;
-import generic.continues.RethrowContinuesFactory;
 import ghidra.app.util.MemoryBlockUtils;
 import ghidra.app.util.Option;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.importer.MessageLog;
-import ghidra.app.util.importer.MessageLogContinuesFactory;
 import ghidra.app.util.opinion.AbstractLibrarySupportLoader;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.framework.model.DomainObject;
@@ -22,7 +19,6 @@ import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
-import ghidra.program.model.data.DataTypeConflictException;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.CodeUnit;
@@ -70,7 +66,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public abstract String getName();
 
-	public abstract void checkFormat(FactoryBundledWithBinaryReader reader) throws IOException, InvalidHeaderException;
+	public abstract void checkFormat(BinaryReader reader) throws IOException, InvalidHeaderException;
 	
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
@@ -78,7 +74,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		if (provider.length() < 4) {
 			return loadSpecs;
 		}
-		var reader = new FactoryBundledWithBinaryReader(RethrowContinuesFactory.INSTANCE, provider, true);
+		var reader = new BinaryReader(provider, true);
 		try {
 			checkFormat(reader);
 			loadSpecs.add(new LoadSpec(this, 0, new LanguageCompilerSpecPair("x86:LE:32:default", "borlandcpp"), true));
@@ -110,10 +106,9 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		int id = program.startTransaction(ARROW + "Loading..");
 		monitor.setIndeterminate(true);
 		monitor.setMessage(String.format(ARROW + "Loading %s", getName()));
-		ContinuesFactory factory = MessageLogContinuesFactory.create(messageLog);
 		try {
 			// Parse EXE from file
-			var executable = new Executable(factory, provider, loaderOptions);
+			var executable = new Executable(provider, loaderOptions);
 			
 			// Map IMAGE data (MZ, LX)
 			createImageMappings(executable, program, provider, monitor);
@@ -279,10 +274,6 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			Msg.warn(this, "LX data markup conflict at " + address + ": " + e.getMessage());
 			e.printStackTrace();
 		}
-		catch (DataTypeConflictException e) {
-			Msg.error(this, "LX data type markup conflict at " + address + ": " + e.getMessage());
-			e.printStackTrace();
-		}
 		return null;
 	}
 	
@@ -309,7 +300,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			var pageOffset  = le.lfamz + header.dataPagesOffset + (entry.getOffset()-1) * pageSize;
 			
 			// Read page from file
-			FactoryBundledWithBinaryReader r = le.getReader();
+			BinaryReader r = le.getReader();
 			r.setPointerIndex(pageOffset);
 			byte[] pageData;
 			var isLastPage = i == object.pageCount - 1;

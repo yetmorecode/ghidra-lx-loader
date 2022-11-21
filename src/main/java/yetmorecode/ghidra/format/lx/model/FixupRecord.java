@@ -3,8 +3,8 @@ package yetmorecode.ghidra.format.lx.model;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
@@ -35,7 +35,7 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 	
 	private StructureDataType dt;
 	
-	public FixupRecord(FactoryBundledWithBinaryReader reader, long l, int number, int baseAddress, int page) throws IOException {
+	public FixupRecord(BinaryReader reader, long l, int number, int baseAddress, int page) throws IOException {
 		var oldIndex = reader.getPointerIndex();
 		reader.setPointerIndex(l);
 		index = number;
@@ -72,14 +72,14 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 		// target data
 		if (objectNumber16Bit()) {
 			objectNumber = reader.readNextShort();
-			dt.add(WORD, "objectNumber", "This field is an index into the current module’s Object Table to specify the targetObject. It is a Byte value when the ‘16-bit Object Number/Module Ordinal Flag’ bit inthe target flags field is clear and a Word value when the bit is set.");
+			dt.add(WORD, "objectNumber", "This field is an index into the current moduleâ€™s Object Table to specify the targetObject. It is a Byte value when the â€˜16-bit Object Number/Module Ordinal Flagâ€™ bit inthe target flags field is clear and a Word value when the bit is set.");
 			size += 2;
 		} else {
 			objectNumber = reader.readNextByte();
 			if (objectNumber < 0) {
 				objectNumber += 0x100;
 			}
-			dt.add(BYTE, "objectNumber", "This field is an index into the current module’s Object Table to specify the targetObject. It is a Byte value when the ‘16-bit Object Number/Module Ordinal Flag’ bit inthe target flags field is clear and a Word value when the bit is set.");
+			dt.add(BYTE, "objectNumber", "This field is an index into the current moduleâ€™s Object Table to specify the targetObject. It is a Byte value when the â€˜16-bit Object Number/Module Ordinal Flagâ€™ bit inthe target flags field is clear and a Word value when the bit is set.");
 			size++;
 		}
 		
@@ -88,11 +88,11 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 				// no target offset
 			} else if (isTargetOffset32Bit()) {
 				targetOffset = reader.readNextInt();
-				dt.add(DWORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the ‘32-bitTarget Offset Flag’ bit in the target flags field is clear and a Dword value when the bitis set.");
+				dt.add(DWORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the â€˜32-bitTarget Offset Flagâ€™ bit in the target flags field is clear and a Dword value when the bitis set.");
 				size += 4;
 			} else {
 				targetOffset = reader.readNextShort();
-				dt.add(WORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the ‘32-bitTarget Offset Flag’ bit in the target flags field is clear and a Dword value when the bitis set.");
+				dt.add(WORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the â€˜32-bitTarget Offset Flagâ€™ bit in the target flags field is clear and a Dword value when the bitis set.");
 				size += 2;
 				if (targetOffset < 0) {
 					targetOffset += 0x10000;
