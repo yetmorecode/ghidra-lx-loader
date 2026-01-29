@@ -24,6 +24,7 @@ import ghidra.program.model.lang.LanguageCompilerSpecPair;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.reloc.Relocation;
 import ghidra.program.model.symbol.MemReferenceImpl;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
@@ -122,6 +123,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			onLoadSuccess(program);
 			program.endTransaction(id, true);
 		} catch (Exception e) {
+			Msg.error(this, String.format("Exception in `load` while parsing LxExecutable: %s", e.getMessage()));
 			e.printStackTrace();
 			program.endTransaction(id, false);
 		}
@@ -278,6 +280,9 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	}
 	
 	private byte[] createObjectBlock(Program program, Executable le, LinearObjectTableEntry object, boolean isLastObject) throws IOException {
+		var space = program.getAddressFactory().getDefaultAddressSpace();
+		var relocationTable = program.getRelocationTable();
+
 		var header = (Header)le.header;
 		var pageSize = header.pageSize; 
 		
@@ -309,6 +314,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			} else {
 				pageData = r.readNextByteArray(pageSize);	
 			}
+			byte[] originalPageData = pageData.clone();
 			
 			// Apply fixups to page
 			for (var fix : le.fixups.get(index)) {
@@ -417,6 +423,15 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 							f.objectNumber, f.targetOffset
 						));
 						fixupsUnhandled++;
+					}
+
+					var addr = space.getAddress(f.getSourceAddress());
+					if (f.sourceOffset >= 0 && f.sourceOffset+f.getSize() < pageData.length) {
+						var originalBytes = new byte[f.getSize()];
+						System.arraycopy(originalPageData, f.sourceOffset, originalBytes, 0, f.getSize());
+						relocationTable.add(addr, Relocation.Status.APPLIED, f.getSourceType(), null, originalBytes, null);
+					} else {
+						relocationTable.add(addr, Relocation.Status.APPLIED, f.getSourceType(), null, f.getSize(), null);
 					}
 				}
 			}
