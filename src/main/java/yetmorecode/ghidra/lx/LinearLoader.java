@@ -25,6 +25,8 @@ import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.reloc.Relocation;
+import ghidra.program.model.reloc.Relocation.Status;
+import ghidra.program.model.reloc.RelocationTable;
 import ghidra.program.model.symbol.MemReferenceImpl;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.SourceType;
@@ -295,7 +297,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		int fixupsHandled = 0;
 		int fixupsUnhandled = 0;
 		int fixupsByType[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-		
+
 		// Loop through all pages for this object, apply fixups per page and add them together
 		for (var i = 0; i < object.pageCount; i++) {
 			// Page map indices are one-based 
@@ -315,126 +317,207 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			} else {
 				pageData = r.readNextByteArray(pageSize);	
 			}
-			byte[] originalPageData = pageData.clone();
+			var originalPageData = pageData.clone();
 			
 			// Apply fixups to page
 			for (var fix : le.fixups.get(index)) {
 				var f = (FixupRecord)fix;
+				var addr = space.getAddress(f.getSourceAddress());
 				
 				// Apply the actual fixup
 				int base = loaderOptions.getBaseAddress(le.objects.get(f.objectNumber-1));
 				fixupsByType[f.getSourceType()]++;
 				
-				if (loaderOptions.enableType[f.getSourceType()]) {
-					if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
-						int value = base + f.targetOffset;
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+				/*
+				 * The sourceOffset for each fixup can range from -3 to pageData.length -1.
+				 * If the source offset is negative, only a partial fixup is performed for
+				 * the bytes actually on the page. The same holds for the end of the page.
+				 * Thus of 32bit fixup can fix 1, 2, 3 or 4 bytes depending on the position
+				 * of the fixup on the page. 
+				 */
+				int length = 0;
+				var enabled = loaderOptions.enableType[f.getSourceType()];
+				if (enabled) {
+					fixupsHandled++;	
+				} else {
+					fixupsUnhandled++;
+				}
+				
+				if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
+					int value = base + f.targetOffset;
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset] = (byte)(value & 0xff);	
+						}
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);	
+						}
+						length++;
+					}
+					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+2] = (byte)((value & 0xff0000)>>16);	
+						}
+						length++;
+					}
+					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);	
+						}
+						length++;
+					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, value);
+				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
+					int value = base + f.targetOffset;
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset] = (byte)(value & 0xff);
 						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);						
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);
 						}
-						if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						length++;
+					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, (short)value);
+				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
+					int value = base + f.targetOffset;
+					long address = loaderOptions.getBaseAddress(object) + i*pageSize + f.sourceOffset;
+					value = (int) (value - address - 4);
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset] = (byte)(value & 0xff);
+						}
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);
+						}
+						length++;
+													}
+					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+2] = (byte)((value & 0xff0000)>>16);
 						}
-						if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
-						fixupsHandled++;
-					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
-						int value = base + f.targetOffset;
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
-							pageData[f.sourceOffset] = (byte)(value & 0xff);
-						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);						
-						}
-						fixupsHandled++;
-					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
-						int value = base + f.targetOffset;
-						long address = loaderOptions.getBaseAddress(object) + i*pageSize + f.sourceOffset;
-						value = (int) (value - address - 4);
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
-							pageData[f.sourceOffset] = (byte)(value & 0xff);
-						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);						
-														}
-						if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
-							pageData[f.sourceOffset+2] = (byte)((value & 0xff0000)>>16);
-						}
-						if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
-							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);
-						}
-						fixupsHandled++;
-					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1616PTR_FIXUP) {
-						var off = f.targetOffset;
-						var selector = loaderOptions.getSelector(f.objectNumber);
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						length++;
+					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, value);
+				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1616PTR_FIXUP) {
+					var off = f.targetOffset;
+					var selector = loaderOptions.getSelector(f.objectNumber);
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset] = (byte)(off & 0xff);
 						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
-							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);						
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);
 						}
-						if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+2] = (byte)(selector & 0xff);
 						}
-						if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+3] = (byte)((selector & 0xff00)>>8);
 						}
-						fixupsHandled++;
-					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1632PTR_FIXUP) {
-						var off = f.targetOffset;
-						var selector = loaderOptions.getSelector(f.objectNumber);
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						length++;
+					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, selector);
+				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1632PTR_FIXUP) {
+					var off = f.targetOffset;
+					var selector = loaderOptions.getSelector(f.objectNumber);
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset] = (byte)(off & 0xff);
 						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
-							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);						
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);
 						}
-						if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
-							pageData[f.sourceOffset+2] = (byte)((off & 0xff0000)>>16);						
+						length++;
+					}
+					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+2] = (byte)((off & 0xff0000)>>16);
 						}
-						if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
-							pageData[f.sourceOffset+3] = (byte)((off & 0xff000000)>>24);						
+						length++;
+					}
+					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+						if (enabled) {
+							pageData[f.sourceOffset+3] = (byte)((off & 0xff000000)>>24);
 						}
-						if (f.sourceOffset+4 >= 0 && f.sourceOffset+4 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+4 >= 0 && f.sourceOffset+4 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+4] = (byte)(selector & 0xff);
 						}
-						if (f.sourceOffset+5 >= 0 && f.sourceOffset+5 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+5 >= 0 && f.sourceOffset+5 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+5] = (byte)((selector & 0xff00)>>8);
 						}
-						fixupsHandled++;
-					} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
-						var selector = loaderOptions.getSelector(f.objectNumber);
-						if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						length++;
+					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, off, (short)selector);
+				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
+					var selector = loaderOptions.getSelector(f.objectNumber);
+					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset] = (byte)(selector & 0xff);
 						}
-						if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						length++;
+					}
+					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+						if (enabled) {
 							pageData[f.sourceOffset+1] = (byte)((selector & 0xff00)>>8);
-						}						
-						fixupsHandled++;
-					} else {
-						Msg.warn(this, String.format(
-							"WARNING: unhandled fixup %s (#%d) at %08x (type %02x): %s -> object#%x:%x",
-							f.shortname(), f.index,
-							f.getSourceAddress(),
-							f.getSourceType(),
-							f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", f.sourceOffset),
-							f.objectNumber, f.targetOffset
-						));
-						fixupsUnhandled++;
+						}
+						length++;
 					}
-
-					var addr = space.getAddress(f.getSourceAddress());
-					if (f.sourceOffset >= 0 && f.sourceOffset+f.getSize() < pageData.length) {
-						var originalBytes = new byte[f.getSize()];
-						System.arraycopy(originalPageData, f.sourceOffset, originalBytes, 0, f.getSize());
-						relocationTable.add(addr, Relocation.Status.APPLIED, f.getSourceType(), null, originalBytes, null);
-					} else {
-						relocationTable.add(addr, Relocation.Status.APPLIED, f.getSourceType(), null, f.getSize(), null);
-					}
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, (short)selector);
+				} else {
+					Msg.warn(this, String.format(
+						"WARNING: unhandled fixup %s (#%d) at %08x (type %02x): %s -> object#%x:%x",
+						f.shortname(), f.index,
+						f.getSourceAddress(),
+						f.getSourceType(),
+						f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", f.sourceOffset),
+						f.objectNumber, f.targetOffset
+					));
+					relocationTable.add(
+						addr, Relocation.Status.UNSUPPORTED, f.getSourceType(), 
+						null, 0, 
+						String.format("%s_%s_%08x",
+							loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
+							f.shortname(), 
+							f.getSourceAddress() 
+						)
+					);
+					fixupsUnhandled++;
 				}
+				
 			}
 			
 			// Copy page into object block
@@ -469,6 +552,63 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		return block;
 	}
 	
+
+	
+	
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
+			byte[] originalPageData, int length, int value) {
+		if (!loaderOptions.relocationTableDisabled) {
+			var originalBytes = new byte[length];
+			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
+			relocationTable.add(
+				addr, Relocation.Status.APPLIED, f.getSourceType(), 
+				null, originalBytes, 
+				String.format("%s_%s_%08x_%08x",
+					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
+					f.shortname(), 
+					f.getSourceAddress(),
+					value
+				)
+			);	
+		}
+	}
+	
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
+			byte[] originalPageData, int length, short value) {
+		if (!loaderOptions.relocationTableDisabled) {
+			var originalBytes = new byte[length];
+			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
+			relocationTable.add(
+				addr, Relocation.Status.APPLIED, f.getSourceType(), 
+				null, originalBytes, 
+				String.format("%s_%s_%08x_%04x",
+					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
+					f.shortname(), 
+					f.getSourceAddress(),
+					value
+				)
+			);
+		}
+	}
+	
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
+			byte[] originalPageData, int length, int offset, short selector) {
+		if (!loaderOptions.relocationTableDisabled) {
+			var originalBytes = new byte[length];
+			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
+			relocationTable.add(
+				addr, Relocation.Status.APPLIED, f.getSourceType(), 
+				null, originalBytes, 
+				String.format("%s_%s_%08x_%04x_%08x",
+					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
+					f.shortname(), 
+					f.getSourceAddress(),
+					selector, offset
+				)
+			);
+		}
+	}
+
 	private void createEntrypoint(Executable exe, Program program, TaskMonitor monitor) throws UsrException {
 		var s = program.getAddressFactory().getDefaultAddressSpace();
 		var header = exe.header;
@@ -526,7 +666,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 				if (loaderOptions.fixupEnabled(f) && f.is1616PointerFixup()) {
 					// 16:16 pointer fixups are weird since they involve segment selectors
 					// and Ghidra only knows DOS segmented memory (no protected mode segmentation),
-					// so we remove the old ref and place on calculated by ourself
+					// so we remove the old ref and place one calculated by ourself
 					var to = s.getAddress(loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset);
 					program.getReferenceManager().removeAllReferencesFrom(addr);
 					var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.USER_DEFINED, 0, true);

@@ -17,10 +17,12 @@ public class Options {
 	public final static String GROUP_FIXUPS = "Fixups";
 	public final static String GROUP_MEMORY_MAPPING = "Memory";
 	public final static String GROUP_IMAGE_MAPPING = "Image";
+	public final static String GROUP_EXPERIMENTAL = "Experimental";
 	
 	public final static String OPTION_MAP_EXTRA = "Map LE Loader, Fixup & Data Sections";
 	public final static String OPTION_PAGE_LABELS = "Create labels at page beginnings";
 	public final static String OPTION_FIXUP_LABELS = "Create labels at fixup positions";
+	public final static String OPTION_RELOCATION_TABLE_DISABLE = "Deactivate import of fixup into Ghidra relocation table";
 	
 	
 	public final static String OPTION_FIXUP_ENABLE_0 = "Apply byte fixups";
@@ -49,6 +51,7 @@ public class Options {
 	public boolean logFixupStats = false;
 	public boolean createPageLabels = false;
 	public boolean createFixupLabels = false;
+	public boolean relocationTableDisabled = false;
 	public int[] baseAddresses;
 	public int[] selectors;
 	
@@ -68,6 +71,7 @@ public class Options {
 		logFixupStats = prefs.getBoolean(OPTION_LOG_FIXUP_STATS, logFixupStats);
 		createPageLabels = prefs.getBoolean(OPTION_PAGE_LABELS, createPageLabels);
 		createFixupLabels = prefs.getBoolean(OPTION_FIXUP_LABELS, createFixupLabels);
+		relocationTableDisabled = prefs.getBoolean(OPTION_RELOCATION_TABLE_DISABLE, relocationTableDisabled);
 		parseBaseAddresses(prefs.get(OPTION_OVERRIDE_ADDRESSES, ""));
 		parseSelectors(prefs.get(OPTION_OVERRIDE_SELECTORS, ""));
 	}
@@ -147,6 +151,7 @@ public class Options {
 		list.add(new Option(GROUP_FIXUPS, OPTION_FIXUP_ENABLE_7, prefs.getBoolean(OPTION_FIXUP_ENABLE_7, enableType[7])));
 		list.add(new Option(GROUP_FIXUPS, OPTION_FIXUP_ENABLE_8, prefs.getBoolean(OPTION_FIXUP_ENABLE_8, enableType[8])));
 		list.add(new Option(GROUP_FIXUPS, OPTION_LOG_FIXUP_STATS, prefs.getBoolean(OPTION_LOG_FIXUP_STATS, logFixupStats)));
+		list.add(new Option(GROUP_EXPERIMENTAL, OPTION_RELOCATION_TABLE_DISABLE, prefs.getBoolean(OPTION_RELOCATION_TABLE_DISABLE, relocationTableDisabled)));
 		return list;
 	}
 	
@@ -195,6 +200,9 @@ public class Options {
 			} else if (option.getName().equals(OPTION_EMULATE_DOS32A)) {
 				emulateDOS32A = Boolean.parseBoolean(option.getValue().toString());
 				prefs.putBoolean(OPTION_EMULATE_DOS32A, Boolean.parseBoolean(option.getValue().toString()));
+			} else if (option.getName().equals(OPTION_RELOCATION_TABLE_DISABLE)) {
+				relocationTableDisabled = Boolean.parseBoolean(option.getValue().toString());
+				prefs.putBoolean(OPTION_RELOCATION_TABLE_DISABLE, Boolean.parseBoolean(option.getValue().toString()));
 			}
 		}
 		
@@ -215,7 +223,8 @@ public class Options {
 		String[] addresses = value.split(",");
 		baseAddresses = new int[addresses.length];
 		for (int i = 0; i < addresses.length; i++) {
-			String addr = addresses[i];
+			// See issue #9
+			String addr = addresses[i].strip();
 			addr = addr.replaceAll("0x", "");
 			if (addr.length() > 0) {
 				baseAddresses[i] = Integer.parseInt(addr, 16);	
@@ -229,7 +238,8 @@ public class Options {
 		String[] values = value.split(",");
 		selectors = new int[values.length];
 		for (int i = 0; i < values.length; i++) {
-			String v = values[i];
+			// See issue #9
+			String v = values[i].strip();
 			v = v.replaceAll("0x", "");
 			if (v.length() > 0) {
 				selectors[i] = Integer.parseInt(v, 16);	

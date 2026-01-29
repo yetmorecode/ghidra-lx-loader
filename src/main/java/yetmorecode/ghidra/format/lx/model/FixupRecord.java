@@ -16,9 +16,27 @@ import yetmorecode.ghidra.format.lx.datatype.FixupTargetFlags;
 
 public class FixupRecord extends LinearFixupRecord implements StructConverter {
 
+	/**
+	 * Number of sources if this fixup uses a source list (very unlikely)
+	 */
 	public int sourceCount = 1;
+	/**
+	 * Original index in the fixup table (increasing by one per whole fixup)
+	 */
 	public int index;
+	/**
+	 * Size in bytes of the whole fixup record in the fixup record table
+	 * (This is not the actual size of the fixup at runtime)
+	 */
 	public int size;
+	/**
+	 * Size of the actual performed fixup ("imported data" in LE-speak) when loading the executable
+	 */
+	public int fixupSize = 1;
+	/**
+	 * Linear address of the page this fixup is performed on.
+	 * (baseAddress + page * 0x1000)
+	 */
 	public int pageAddress;
 	
 	public static String[] shortnames = {
@@ -88,10 +106,12 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 				// no target offset
 			} else if (isTargetOffset32Bit()) {
 				targetOffset = reader.readNextInt();
+				fixupSize = 4;
 				dt.add(DWORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the ‘32-bitTarget Offset Flag’ bit in the target flags field is clear and a Dword value when the bitis set.");
 				size += 4;
 			} else {
 				targetOffset = reader.readNextShort();
+				fixupSize = 2;
 				dt.add(WORD, "targetOffset", "This field is an offset into the specified target Object. It is not present when theSource Type specifies a 16-bit Selector fixup. It is a Word value when the ‘32-bitTarget Offset Flag’ bit in the target flags field is clear and a Dword value when the bitis set.");
 				size += 2;
 				if (targetOffset < 0) {
@@ -101,19 +121,24 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_ORDINAL) {
 			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
 				ordinalIndex = reader.readNextShort();
+				fixupSize = 2;
 				size += 2;
 			} else {
 				ordinalIndex = reader.readNextByte();
+				fixupSize = 1;
 				size++;
 			}
 			if ((targetFlags & TARGET_8BIT_ORDINAL) > 0) {
 				ordinalNumber = reader.readNextByte();
+				fixupSize = 1;
 				size++;
 			}  else if ((targetFlags & TARGET_32BIT_OFFSET) > 0) {
 				ordinalNumber = reader.readNextInt();
+				fixupSize = 4;
 				size += 4;
 			} else {
 				ordinalNumber = reader.readNextShort();
+				fixupSize = 2;
 				size += 2;
 			}
 			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
@@ -128,33 +153,41 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_NAME) {
 			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
 				ordinalIndex = reader.readNextShort();
+				fixupSize = 2;
 				size += 2;
 			} else {
 				ordinalIndex = reader.readNextByte();
+				fixupSize = 1;
 				size++;
 			}
 			if ((targetFlags & TARGET_32BIT_OFFSET) > 0) {
 				ordinalNumber = reader.readNextInt();
+				fixupSize = 2;
 				size += 4;
 			} else {
 				ordinalNumber = reader.readNextShort();
+				fixupSize = 2;
 				size += 2;
 			}
 			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
 				if ((targetFlags & TARGET_32BIT_ADDITIVE) > 0) {
 					additive = reader.readNextInt();
+					fixupSize = 4;
 					size += 4;
 				} else {
 					additive = reader.readNextShort();
+					fixupSize = 2;
 					size += 2;
 				}
 			}
 		} else if ((targetFlags & TARGET_TYPE_MASK) == TARGET_IMPORT_ENTRY) {
 			if ((targetFlags & TARGET_16BIT_OBJECT) > 0) {
 				ordinalIndex = reader.readNextShort();
+				fixupSize = 2;
 				size += 2;
 			} else {
 				ordinalIndex = reader.readNextByte();
+				fixupSize = 1;
 				size++;
 			}
 			if ((targetFlags & TARGET_ADDITIVE_FIXUP) > 0) {
