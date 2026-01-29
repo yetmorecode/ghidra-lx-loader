@@ -62,7 +62,7 @@ public class ObjectFixupsType extends StructureDataType {
 					var ref = new MemReferenceImpl(
 						space.getAddress(f.getSourceAddress()), 
 						to, 
-						RefType.DATA_IND, 
+						RefType.DATA, 
 						SourceType.ANALYSIS, 
 						0, 
 						false

@@ -21,7 +21,7 @@ import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.lang.LanguageCompilerSpecPair;
-import ghidra.program.model.listing.CodeUnit;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.reloc.Relocation;
@@ -56,6 +56,7 @@ import yetmorecode.ghidra.format.lx.model.Executable;
  * @author yetmorecode@posteo.net
  */
 public abstract class LinearLoader extends AbstractLibrarySupportLoader {
+
 	protected final static String CHECK = " " + (new String(new int[] { 0x2713 }, 0, 1)) + " ";
 	protected final static String CLOCK = " " + (new String(new int[] { 0x231b }, 0, 1)) + " ";
 	protected final static String HORSE = " " + (new String(new int[] { 0x2658 }, 0, 1)) + " ";
@@ -92,14 +93,14 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	public abstract void onLoadSuccess(Program program);
 
 	@Override
-	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
-			Program program, TaskMonitor monitor, MessageLog log)
-			throws CancelledException, IOException {
+	protected void load(Program program, ImporterSettings settings) throws CancelledException, IOException {
+		var monitor = settings.monitor();
+		var provider = settings.provider();
 
 		if (monitor.isCancelled()) {
 			return;
 		}
-		messageLog = log;
+		messageLog = settings.log();
 		messageLog.clear();
 		log(CLOCK + "Loading '%s'", program.getDomainFile());
 		
@@ -535,7 +536,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 				if (loaderOptions.createFixupLabels) {	
 					program.getListing().setComment(
 						addr, 
-						CodeUnit.PRE_COMMENT, 
+						CommentType.PRE, 
 						String.format(
 							"fixup to -> %08x",
 							loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset
@@ -560,7 +561,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 
 	@Override
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
-			DomainObject domainObject, boolean isLoadIntoProgram) {
+			DomainObject domainObject, boolean isLoadIntoProgram, boolean mirrorFsLayout) {
 		return loaderOptions.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
 	}
 
