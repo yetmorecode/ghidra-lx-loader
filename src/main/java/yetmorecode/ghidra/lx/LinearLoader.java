@@ -257,13 +257,21 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		for (var object : executable.objects) {
 			monitor.setMessage(String.format(ARROW + "Mapping .object%d", object.number));
 			byte[] block = createObjectBlock(program, executable, object, object.number == executable.objects.size());
-			program.getMemory().createInitializedBlock(
-				".object" + object.number, 
-				space.getAddress(loaderOptions.getBaseAddress(object)), 
-				new ByteArrayInputStream(block), 
-				object.size, 
+			var memoryBlock = program.getMemory().createInitializedBlock(
+				".object" + object.number,
+				space.getAddress(loaderOptions.getBaseAddress(object)),
+				new ByteArrayInputStream(block),
+				object.size,
 				monitor, false
 			);
+			// Apply the object's write/execute flags (new blocks default to read-only).
+			// Keep every loaded object readable so analysis can see objects without FLAG_READABLE.
+			memoryBlock.setPermissions(
+				true,
+				(object.flags & LinearObjectTableEntry.FLAG_WRITEABLE) != 0,
+				(object.flags & LinearObjectTableEntry.FLAG_EXECUTABLE) != 0
+			);
+			memoryBlock.setComment(String.format("Object table flags 0x%08x", object.flags));
 		}
 	}
 	
