@@ -271,6 +271,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 				(object.flags & LinearObjectTableEntry.FLAG_WRITEABLE) != 0,
 				(object.flags & LinearObjectTableEntry.FLAG_EXECUTABLE) != 0
 			);
+			memoryBlock.setComment(String.format("Object table flags 0x%08x", object.flags));
 		}
 	}
 	
