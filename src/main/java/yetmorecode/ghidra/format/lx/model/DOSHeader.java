@@ -5,7 +5,6 @@ import java.io.RandomAccessFile;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.Writeable;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
@@ -13,7 +12,7 @@ import ghidra.program.model.data.StructureDataType;
 import ghidra.util.DataConverter;
 import ghidra.util.exception.DuplicateNameException;
 
-public class DOSHeader implements StructConverter, Writeable   {
+public class DOSHeader implements StructConverter   {
 	/** The name to use when converting into a structure data type. */
     public final static String NAME = "IMAGE_DOS_HEADER";
 	public final static int IMAGE_DOS_SIGNATURE = 0x5A4D; // MZ
@@ -364,10 +363,6 @@ public class DOSHeader implements StructConverter, Writeable   {
 		}
 	}
 
-	/**
-	 * @see ghidra.app.util.bin.format.Writeable#write(java.io.RandomAccessFile, ghidra.util.DataConverter)
-	 */
-	@Override
 	public void write(RandomAccessFile raf, DataConverter dc) throws IOException {
 		raf.write(dc.getBytes(e_magic));
 		raf.write(dc.getBytes(e_cblp));
