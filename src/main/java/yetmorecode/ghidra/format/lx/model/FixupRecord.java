@@ -64,7 +64,7 @@ public class FixupRecord extends LinearFixupRecord implements StructConverter {
 		size = 2;
 		// source data
 		if (hasSourceList()) {
-			sourceCount = reader.readNextByte();
+			sourceCount = Byte.toUnsignedInt(reader.readNextByte());
 			size++;
 		} else {
 			ByteBuffer bb = ByteBuffer.allocate(2);
