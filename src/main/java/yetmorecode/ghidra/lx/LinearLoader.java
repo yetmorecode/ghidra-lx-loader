@@ -46,15 +46,15 @@ import yetmorecode.ghidra.format.lx.model.Executable;
 
 /**
  * LxLoader - LX/LE/LC executable format loader
- * 
+ *
  * This loader is able to to load executable files of the LX/LE/LC format.
- * 
- * Linear Executable is an executable file format. 
- * It is used by OS/2, MS-DOS (DOS extender), and by MS Windows VxD files. 
- * It is a successor to NE (New Executable). 
+ *
+ * Linear Executable is an executable file format.
+ * It is used by OS/2, MS-DOS (DOS extender), and by MS Windows VxD files.
+ * It is a successor to NE (New Executable).
  * There are two main varieties of it: LX (32-bit), and LE (mixed 16/32-bit).
  * LC variety is using compression (hence the C).
- * 
+ *
  * @author yetmorecode@posteo.net
  */
 public abstract class LinearLoader extends AbstractLibrarySupportLoader {
@@ -63,15 +63,15 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	protected final static String CLOCK = " " + (new String(new int[] { 0x231b }, 0, 1)) + " ";
 	protected final static String HORSE = " " + (new String(new int[] { 0x2658 }, 0, 1)) + " ";
 	protected final static String ARROW = " " + (new String(new int[] { 0x2794 }, 0, 1)) + " ";
-	
+
 	protected MessageLog messageLog;
 	protected Options loaderOptions = new Options();
-	
+
 	@Override
 	public abstract String getName();
 
 	public abstract void checkFormat(BinaryReader reader) throws IOException, InvalidHeaderException;
-	
+
 	@Override
 	public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
 		List<LoadSpec> loadSpecs = new ArrayList<>();
@@ -91,7 +91,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		}
 		return loadSpecs;
 	}
-	
+
 	public abstract void onLoadSuccess(Program program);
 
 	@Override
@@ -105,7 +105,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		messageLog = settings.log();
 		messageLog.clear();
 		log(CLOCK + "Loading '%s'", program.getDomainFile());
-		
+
 		// Try parsing the executable
 		int id = program.startTransaction(ARROW + "Loading..");
 		monitor.setIndeterminate(true);
@@ -113,16 +113,16 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		try {
 			// Parse EXE from file
 			var executable = new Executable(provider, loaderOptions);
-			
+
 			// Map IMAGE data (MZ, LX)
 			createImageMappings(executable, program, provider, monitor);
-			
+
 			// Map objects
 			createObjects(executable, program, monitor);
-			
+
 			// Add entrypoint, disassemble, ..
 			createEntrypoint(executable, program, monitor);
-			
+
 			onLoadSuccess(program);
 			program.endTransaction(id, true);
 		} catch (Exception e) {
@@ -131,10 +131,10 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			program.endTransaction(id, false);
 		}
 	}
-	
+
 	/**
 	 * Creates MZ and LE exe image memory block (in OTHER space) and types the data
-	 * 
+	 *
 	 * LX/LE have 3 main regions:
 	 * - header (aka information section)
 	 * - loader section (mostly fixup/relocation data)
@@ -144,27 +144,27 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		var header = (Header)e.header;
 		var dosHeader = e.mz;
 		var fileBytes = MemoryBlockUtils.createFileBytes(program, provider, monitor);
-		Address addr;		
+		Address addr;
 		monitor.setMessage(String.format(ARROW + "Mapping Image data", header.getTypePrefix().toUpperCase()));
 
 		// Map the whole image for inspection
 		var b = MemoryBlockUtils.createInitializedBlock(
-			program, 
-			true, 
-			".image", AddressSpace.OTHER_SPACE.getAddress(0), 
-			fileBytes, 0, fileBytes.getSize(), 
-			"Raw EXE image data", 
-			null, 
-			false, false, false, 
+			program,
+			true,
+			".image", AddressSpace.OTHER_SPACE.getAddress(0),
+			fileBytes, 0, fileBytes.getSize(),
+			"Raw EXE image data",
+			null,
+			false, false, false,
 			null
 		);
-		
+
 		if (e.mz.isDosSignature()) {
 			// MZ image
 			addr = b.getStart();
 			createData(program, addr, dosHeader.toDataType());
 			program.getSymbolTable().createLabel(b.getStart(), String.format("IMG_%08X_MZ_HEADER", 0), SourceType.USER_DEFINED);
-			log(CHECK + "MZ Header");			
+			log(CHECK + "MZ Header");
 		}
 		for (var s : e.dos16Headers.entrySet()) {
 			// BW DOS/16 image
@@ -173,13 +173,13 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_DOS16_HEADER", s.getKey()), SourceType.USER_DEFINED);
 			log(CHECK + "BW DOS/16 Header");
 		}
-		
+
 		if (e.mzSecondary != null) {
 			// MZ image
 			addr = b.getStart().add(e.lfamz);
 			createData(program, addr, e.mzSecondary.toDataType());
 			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_MZ_HEADER", e.lfamz), SourceType.USER_DEFINED);
-			log(CHECK + "MZ Header");			
+			log(CHECK + "MZ Header");
 		}
 
 		// LE header
@@ -187,19 +187,19 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		createData(program, addr, header.toDataType());
 		program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_HEADER", e.lfanew), SourceType.USER_DEFINED);
 		log(CHECK + "LX Header");
-		
+
 		if (loaderOptions.mapExtra) {
 			// LE loader section
 			addr = b.getStart().add(e.lfanew + header.objectTableOffset);
 			monitor.setMessage(String.format(ARROW + "Mapping LX Loader section"));
 			createData(
-				program, 
+				program,
 				addr,
 				new LoaderSectionType(e, header.fixupPageTableOffset - header.objectTableOffset)
 			);
 			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_LOADER", e.lfanew + header.objectTableOffset), SourceType.USER_DEFINED);
 			log(CHECK + "LX Loader Section");
-		
+
 			// LE fixup section
 			var dm = program.getDataTypeManager();
 			var cat = dm.createCategory(new CategoryPath("/_le/_fixup"));
@@ -209,7 +209,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			monitor.setMaximum(e.fixupCount);
 			monitor.setProgress(0);
 			var ft = new FixupSectionType(
-				e, 
+				e,
 				(int) (e.lfamz + header.dataPagesOffset - e.lfanew - header.fixupPageTableOffset),
 				loaderOptions,
 				cat,
@@ -220,37 +220,37 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			createData(program, addr, ft);
 			program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_LE_FIXUP", e.lfanew + header.fixupPageTableOffset), SourceType.USER_DEFINED);
 			log(CHECK + "LX Fixups");
-		
+
 			// LE Data Section
 			addr = b.getStart().add(e.lfamz + header.dataPagesOffset);
 			monitor.setMessage(String.format(ARROW + "Mapping data pages (%d total)", e.header.pageCount));
 			var all = new StructureDataType("IMG_LE_DATA", 0);
-			
+
 			// Full size pages
 			for (var i = 0; i < e.header.pageCount-1; i++) {
-				var dt = new ArrayDataType(StructConverter.BYTE, header.pageSize, 0); 
+				var dt = new ArrayDataType(StructConverter.BYTE, header.pageSize, 0);
 				addr = b.getStart().add(e.lfamz + header.dataPagesOffset + i * header.pageSize);
 				all.add(dt, "page_" + (i+1), "");
 			}
 			// Last page
 			var dt = new ArrayDataType(StructConverter.BYTE, header.lastPageSize, 0);
 			all.add(dt, "page_" + header.pageCount, "");
-			
+
 			addr = b.getStart().add(e.lfamz + header.dataPagesOffset);
 			createData(program, addr, all);
 			log(CHECK + "LX Data Pages");
-			
+
 			if (e.vxd != null) {
 				// VxD Version Resource
 				addr = b.getStart().add(e.lfamz + header.winresoff);
 				createData(program, addr, e.vxd.toDataType());
-				
+
 				program.getSymbolTable().createLabel(addr, String.format("IMG_%08X_VXD_VERSION", e.lfamz + header.winresoff), SourceType.USER_DEFINED);
 				log(CHECK + "VxD Windows VERSIONINFO");
 			}
 		}
 	}
-	
+
 	private void createObjects(Executable executable, Program program, TaskMonitor monitor) throws IOException, UsrException {
 		// Map each object
 		var space = program.getAddressFactory().getDefaultAddressSpace();
@@ -258,15 +258,15 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			monitor.setMessage(String.format(ARROW + "Mapping .object%d", object.number));
 			byte[] block = createObjectBlock(program, executable, object, object.number == executable.objects.size());
 			program.getMemory().createInitializedBlock(
-				".object" + object.number, 
-				space.getAddress(loaderOptions.getBaseAddress(object)), 
-				new ByteArrayInputStream(block), 
-				object.size, 
+				".object" + object.number,
+				space.getAddress(loaderOptions.getBaseAddress(object)),
+				new ByteArrayInputStream(block),
+				object.size,
 				monitor, false
 			);
 		}
 	}
-	
+
 	private Data createData(Program program, Address address, DataType dt) {
 		try {
 			Data d = program.getListing().getDataAt(address);
@@ -281,18 +281,18 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		}
 		return null;
 	}
-	
+
 	private byte[] createObjectBlock(Program program, Executable le, LinearObjectTableEntry object, boolean isLastObject) throws IOException {
 		var space = program.getAddressFactory().getDefaultAddressSpace();
 		var relocationTable = program.getRelocationTable();
 
 		var header = (Header)le.header;
-		var pageSize = header.pageSize; 
-		
+		var pageSize = header.pageSize;
+
 		// Temporary memory to assemble all pages to one block
 		byte block[] = new byte[object.size+4096];
 		var blockIndex = 0;
-		
+
 		// Some statistics on fixups
 		int fixupsHandled = 0;
 		int fixupsUnhandled = 0;
@@ -300,13 +300,13 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 
 		// Loop through all pages for this object, apply fixups per page and add them together
 		for (var i = 0; i < object.pageCount; i++) {
-			// Page map indices are one-based 
+			// Page map indices are one-based
 			var index = object.pageTableIndex + i;
-			
+
 			//LxPageMapEntry entry = new LxPageMapEntry(le, pageMapOffset + (index-1) * 4);
 			var entry = le.pageRecords.get(index-1);
 			var pageOffset  = le.lfamz + header.dataPagesOffset + (entry.getOffset()-1) * pageSize;
-			
+
 			// Read page from file
 			BinaryReader r = le.getReader();
 			r.setPointerIndex(pageOffset);
@@ -315,224 +315,227 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			if (isLastObject && isLastPage) {
 				pageData = r.readNextByteArray(header.lastPageSize);
 			} else {
-				pageData = r.readNextByteArray(pageSize);	
+				pageData = r.readNextByteArray(pageSize);
 			}
 			var originalPageData = pageData.clone();
-			
+
 			// Apply fixups to page
 			for (var fix : le.fixups.get(index)) {
 				var f = (FixupRecord)fix;
-				var addr = space.getAddress(f.getSourceAddress());
-				
+				java.util.List<Short> offsets = f.hasSourceList() ? f.sourceList : java.util.Collections.singletonList(f.sourceOffset);
+				for (short sourceOffset : offsets) {
+				var addr = space.getAddress(Integer.toUnsignedLong(f.pageAddress + sourceOffset));
+
 				// Apply the actual fixup
 				int base = loaderOptions.getBaseAddress(le.objects.get(f.objectNumber-1));
 				fixupsByType[f.getSourceType()]++;
-				
+
 				/*
 				 * The sourceOffset for each fixup can range from -3 to pageData.length -1.
 				 * If the source offset is negative, only a partial fixup is performed for
 				 * the bytes actually on the page. The same holds for the end of the page.
 				 * Thus of 32bit fixup can fix 1, 2, 3 or 4 bytes depending on the position
-				 * of the fixup on the page. 
+				 * of the fixup on the page.
 				 */
 				int length = 0;
 				var enabled = loaderOptions.enableType[f.getSourceType()];
 				if (enabled) {
-					fixupsHandled++;	
+					fixupsHandled++;
 				} else {
 					fixupsUnhandled++;
 				}
-				
+
 				if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT_OFFSET_FIXUP) {
 					int value = base + f.targetOffset;
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(value & 0xff);	
+							pageData[sourceOffset] = (byte)(value & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);	
+							pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);
 						}
 						length++;
 					}
-					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+					if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+2] = (byte)((value & 0xff0000)>>16);	
+							pageData[sourceOffset+2] = (byte)((value & 0xff0000)>>16);
 						}
 						length++;
 					}
-					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+					if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);	
+							pageData[sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, value);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, value);
 				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_OFFSET_FIXUP) {
 					int value = base + f.targetOffset;
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(value & 0xff);
+							pageData[sourceOffset] = (byte)(value & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);
+							pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, (short)value);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, (short)value);
 				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_32BIT__SELF_REF_OFFSET_FIXUP) {
 					int value = base + f.targetOffset;
-					long address = loaderOptions.getBaseAddress(object) + i*pageSize + f.sourceOffset;
+					long address = loaderOptions.getBaseAddress(object) + i*pageSize + sourceOffset;
 					value = (int) (value - address - 4);
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(value & 0xff);
+							pageData[sourceOffset] = (byte)(value & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((value & 0xff00)>>8);
+							pageData[sourceOffset+1] = (byte)((value & 0xff00)>>8);
 						}
 						length++;
 													}
-					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+					if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+2] = (byte)((value & 0xff0000)>>16);
+							pageData[sourceOffset+2] = (byte)((value & 0xff0000)>>16);
 						}
 						length++;
 					}
-					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+					if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+3] = (byte)((value & 0xff000000)>>24);
+							pageData[sourceOffset+3] = (byte)((value & 0xff000000)>>24);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, value);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, value);
 				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1616PTR_FIXUP) {
 					var off = f.targetOffset;
 					var selector = loaderOptions.getSelector(f.objectNumber);
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(off & 0xff);
+							pageData[sourceOffset] = (byte)(off & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);
+							pageData[sourceOffset+1] = (byte)((off & 0xff00)>>8);
 						}
 						length++;
 					}
-					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+					if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+2] = (byte)(selector & 0xff);
+							pageData[sourceOffset+2] = (byte)(selector & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+					if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+3] = (byte)((selector & 0xff00)>>8);
+							pageData[sourceOffset+3] = (byte)((selector & 0xff00)>>8);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, selector);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, selector);
 				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_1632PTR_FIXUP) {
 					var off = f.targetOffset;
 					var selector = loaderOptions.getSelector(f.objectNumber);
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(off & 0xff);
+							pageData[sourceOffset] = (byte)(off & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((off & 0xff00)>>8);
+							pageData[sourceOffset+1] = (byte)((off & 0xff00)>>8);
 						}
 						length++;
 					}
-					if (f.sourceOffset+2 >= 0 && f.sourceOffset+2 < pageData.length) {
+					if (sourceOffset+2 >= 0 && sourceOffset+2 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+2] = (byte)((off & 0xff0000)>>16);
+							pageData[sourceOffset+2] = (byte)((off & 0xff0000)>>16);
 						}
 						length++;
 					}
-					if (f.sourceOffset+3 >= 0 && f.sourceOffset+3 < pageData.length) {
+					if (sourceOffset+3 >= 0 && sourceOffset+3 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+3] = (byte)((off & 0xff000000)>>24);
+							pageData[sourceOffset+3] = (byte)((off & 0xff000000)>>24);
 						}
 						length++;
 					}
-					if (f.sourceOffset+4 >= 0 && f.sourceOffset+4 < pageData.length) {
+					if (sourceOffset+4 >= 0 && sourceOffset+4 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+4] = (byte)(selector & 0xff);
+							pageData[sourceOffset+4] = (byte)(selector & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+5 >= 0 && f.sourceOffset+5 < pageData.length) {
+					if (sourceOffset+5 >= 0 && sourceOffset+5 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+5] = (byte)((selector & 0xff00)>>8);
+							pageData[sourceOffset+5] = (byte)((selector & 0xff00)>>8);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, off, (short)selector);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, off, (short)selector);
 				} else if (f.getSourceType() == LinearFixupRecord.SOURCE_16BIT_SELECTOR_FIXUP) {
 					var selector = loaderOptions.getSelector(f.objectNumber);
-					if (f.sourceOffset >= 0 && f.sourceOffset < pageData.length) {
+					if (sourceOffset >= 0 && sourceOffset < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset] = (byte)(selector & 0xff);
+							pageData[sourceOffset] = (byte)(selector & 0xff);
 						}
 						length++;
 					}
-					if (f.sourceOffset+1 >= 0 && f.sourceOffset+1 < pageData.length) {
+					if (sourceOffset+1 >= 0 && sourceOffset+1 < pageData.length) {
 						if (enabled) {
-							pageData[f.sourceOffset+1] = (byte)((selector & 0xff00)>>8);
+							pageData[sourceOffset+1] = (byte)((selector & 0xff00)>>8);
 						}
 						length++;
 					}
-					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, originalPageData, length, (short)selector);
+					addRelocation(relocationTable, addr, Relocation.Status.APPLIED, f, sourceOffset, originalPageData, length, (short)selector);
 				} else {
 					Msg.warn(this, String.format(
 						"WARNING: unhandled fixup %s (#%d) at %08x (type %02x): %s -> object#%x:%x",
 						f.shortname(), f.index,
-						f.getSourceAddress(),
+						(f.pageAddress + sourceOffset),
 						f.getSourceType(),
-						f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", f.sourceOffset),
+						f.hasSourceList() ? "source list " + f.sourceCount : String.format("%x", sourceOffset),
 						f.objectNumber, f.targetOffset
 					));
 					relocationTable.add(
-						addr, Relocation.Status.UNSUPPORTED, f.getSourceType(), 
-						null, 0, 
+						addr, Relocation.Status.UNSUPPORTED, f.getSourceType(),
+						null, 0,
 						String.format("%s_%s_%08x",
 							loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
-							f.shortname(), 
-							f.getSourceAddress() 
+							f.shortname(),
+							(f.pageAddress + sourceOffset)
 						)
 					);
 					fixupsUnhandled++;
 				}
-				
+
+				}
 			}
-			
+
 			// Copy page into object block
 			System.arraycopy(pageData, 0, block, blockIndex, pageData.length);
 			blockIndex += pageSize;
 		}
-		
-		log(CHECK + "Mapped .object%d into memory: %08x - %08x [%08x] (selector %03x)", 
-			object.number, 
+
+		log(CHECK + "Mapped .object%d into memory: %08x - %08x [%08x] (selector %03x)",
+			object.number,
 			loaderOptions.getBaseAddress(object),
 			loaderOptions.getBaseAddress(object) + object.size,
 			object.size,
 			loaderOptions.getSelector(object)
 		);
-		
+
 		// Log fixup statistics
 		if (loaderOptions.logFixupStats) {
 			ArrayList<String> byType = new ArrayList<>();
@@ -551,58 +554,58 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		}
 		return block;
 	}
-	
 
-	
-	
-	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
+
+
+
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f, int sourceOffset,
 			byte[] originalPageData, int length, int value) {
 		if (!loaderOptions.relocationTableDisabled) {
 			var originalBytes = new byte[length];
-			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
+			System.arraycopy(originalPageData, Math.max(0, sourceOffset), originalBytes, 0, length);
 			relocationTable.add(
-				addr, Relocation.Status.APPLIED, f.getSourceType(), 
-				null, originalBytes, 
+				addr, Relocation.Status.APPLIED, f.getSourceType(),
+				null, originalBytes,
 				String.format("%s_%s_%08x_%08x",
 					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
-					f.shortname(), 
-					f.getSourceAddress(),
-					value
-				)
-			);	
-		}
-	}
-	
-	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
-			byte[] originalPageData, int length, short value) {
-		if (!loaderOptions.relocationTableDisabled) {
-			var originalBytes = new byte[length];
-			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
-			relocationTable.add(
-				addr, Relocation.Status.APPLIED, f.getSourceType(), 
-				null, originalBytes, 
-				String.format("%s_%s_%08x_%04x",
-					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
-					f.shortname(), 
-					f.getSourceAddress(),
+					f.shortname(),
+					(f.pageAddress + sourceOffset),
 					value
 				)
 			);
 		}
 	}
-	
-	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f,
+
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f, int sourceOffset,
+			byte[] originalPageData, int length, short value) {
+		if (!loaderOptions.relocationTableDisabled) {
+			var originalBytes = new byte[length];
+			System.arraycopy(originalPageData, Math.max(0, sourceOffset), originalBytes, 0, length);
+			relocationTable.add(
+				addr, Relocation.Status.APPLIED, f.getSourceType(),
+				null, originalBytes,
+				String.format("%s_%s_%08x_%04x",
+					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
+					f.shortname(),
+					(f.pageAddress + sourceOffset),
+					value
+				)
+			);
+		}
+	}
+
+	private void addRelocation(RelocationTable relocationTable, Address addr, Status applied, FixupRecord f, int sourceOffset,
 			byte[] originalPageData, int length, int offset, short selector) {
 		if (!loaderOptions.relocationTableDisabled) {
 			var originalBytes = new byte[length];
-			System.arraycopy(originalPageData, Math.max(0, f.sourceOffset), originalBytes, 0, length);
+			System.arraycopy(originalPageData, Math.max(0, sourceOffset), originalBytes, 0, length);
 			relocationTable.add(
-				addr, Relocation.Status.APPLIED, f.getSourceType(), 
-				null, originalBytes, 
+				addr, Relocation.Status.APPLIED, f.getSourceType(),
+				null, originalBytes,
 				String.format("%s_%s_%08x_%04x_%08x",
 					loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
-					f.shortname(), 
-					f.getSourceAddress(),
+					f.shortname(),
+					(f.pageAddress + sourceOffset),
 					selector, offset
 				)
 			);
@@ -612,27 +615,27 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 	private void createEntrypoint(Executable exe, Program program, TaskMonitor monitor) throws UsrException {
 		var s = program.getAddressFactory().getDefaultAddressSpace();
 		var header = exe.header;
-		
+
 		// Initialization (entry point, disassemble, ...)
 		if (loaderOptions.addEntry && header.eipObject > 0) {
 			monitor.setMessage(String.format(ARROW + "Setting entrypoint"));
 			var api = new FlatProgramAPI(program, monitor);
 			int eip = header.eip;
 			var eipObject = exe.objects.get(header.eipObject-1);
-			eip += loaderOptions.getBaseAddress(eipObject);			
-			log(CHECK + "Entrypoint set @ %08x [base %08x + eip %08x]", 
-				eip, 
-				loaderOptions.getBaseAddress(eipObject), 
+			eip += loaderOptions.getBaseAddress(eipObject);
+			log(CHECK + "Entrypoint set @ %08x [base %08x + eip %08x]",
+				eip,
+				loaderOptions.getBaseAddress(eipObject),
 				header.eip
 			);
 			if (loaderOptions.disassembleEntry) {
-				api.disassemble(api.toAddr(eip));	
+				api.disassemble(api.toAddr(eip));
 			}
 			program.getSymbolTable().createLabel(api.toAddr(eip), "_entry", SourceType.USER_DEFINED);
 			api.createFunction(api.toAddr(eip), "_entry");
 			api.addEntryPoint(api.toAddr(eip));
 		}
-		
+
 		monitor.setMessage(String.format(ARROW + "Creating fixup xrefs & labels"));
 		monitor.setIndeterminate(true);
 		monitor.setProgress(0);
@@ -640,29 +643,29 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 		for (int i = 1; i <= header.pageCount; i++) {
 			for (var fix : exe.fixups.get(i)) {
 				var f = (FixupRecord)fix;
-				
+
 				monitor.incrementProgress(1);
 				var addr = s.getAddress(f.getSourceAddress());
-	
+
 				if (loaderOptions.createFixupLabels) {
 					// Label at original position
 					program.getSymbolTable().createLabel(
-						addr, 
+						addr,
 						String.format("%s_%s_%08x",
 							loaderOptions.fixupEnabled(f) ? "fix" : "nofix",
-							f.shortname(), 
-							f.getSourceAddress() 
-						), 
+							f.shortname(),
+							f.getSourceAddress()
+						),
 						SourceType.ANALYSIS
 					);
 				}
-				
+
 				// Next at code unit position
 				var unit = program.getListing().getCodeUnitContaining(addr);
 				if (unit != null) {
 					addr = unit.getAddress();
 				}
-				
+
 				if (loaderOptions.fixupEnabled(f) && f.is1616PointerFixup()) {
 					// 16:16 pointer fixups are weird since they involve segment selectors
 					// and Ghidra only knows DOS segmented memory (no protected mode segmentation),
@@ -670,13 +673,13 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 					var to = s.getAddress(loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset);
 					program.getReferenceManager().removeAllReferencesFrom(addr);
 					var ref = new MemReferenceImpl(addr, to, RefType.JUMP_OVERRIDE_UNCONDITIONAL, SourceType.USER_DEFINED, 0, true);
-					program.getReferenceManager().addReference(ref);	
+					program.getReferenceManager().addReference(ref);
 				}
-				
-				if (loaderOptions.createFixupLabels) {	
+
+				if (loaderOptions.createFixupLabels) {
 					program.getListing().setComment(
-						addr, 
-						CommentType.PRE, 
+						addr,
+						CommentType.PRE,
 						String.format(
 							"fixup to -> %08x",
 							loaderOptions.getBaseAddress(f.objectNumber) + f.targetOffset
@@ -694,7 +697,7 @@ public abstract class LinearLoader extends AbstractLibrarySupportLoader {
 			}
 		}
 	}
-	
+
 	private void log(String format, Object... args)  {
 		messageLog.appendMsg(String.format(format, args));
 	}
